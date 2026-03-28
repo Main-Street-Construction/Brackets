@@ -52,8 +52,16 @@ export function propagateWinner(matches: Match[], currentMatch: Match): void {
   matches[nextMatchIdx] = nextMatch;
 }
 
+/** Winners / losers bracket match ids like w1-0, l2-1 — not pool (p-), casual (c-), grand finals (gf-). */
+function isEliminationBracketMatchId(id: string): boolean {
+  return /^[wl]\d/.test(id);
+}
+
 /**
- * Auto-advance round-1 single-team byes. Double-bye: mark with sentinel, do not propagate a fake team id.
+ * Auto-advance single-team byes in winners/losers bracket (any round).
+ * Odd team counts create empty slots in later rounds; without this those teams never reach the final.
+ * Skips grand finals — those must be played (or finished via normal scoring).
+ * Double-empty: BYE_SENTINEL, no propagate.
  */
 export function autoAdvanceByes(matches: Match[]): Match[] {
   let updated = [...matches];
@@ -63,7 +71,8 @@ export function autoAdvanceByes(matches: Match[]): Match[] {
     changed = false;
     for (let i = 0; i < updated.length; i++) {
       const m = updated[i];
-      if (m.winnerId || m.round !== 1) continue;
+      if (m.winnerId) continue;
+      if (!isEliminationBracketMatchId(m.id)) continue;
 
       if (m.team1Id && !m.team2Id) {
         updated[i] = { ...m, winnerId: m.team1Id, score1: 1, score2: 0 };
@@ -76,7 +85,6 @@ export function autoAdvanceByes(matches: Match[]): Match[] {
       } else if (!m.team1Id && !m.team2Id) {
         updated[i] = { ...m, winnerId: BYE_SENTINEL, score1: 0, score2: 0 };
         changed = true;
-        // No propagate — avoid pushing literal 'bye' string as team id
       }
     }
   }

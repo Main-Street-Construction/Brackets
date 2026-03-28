@@ -7,6 +7,7 @@ import { cn } from '../lib/utils';
 import { Radio, LayoutGrid, Trophy, Users, Clock, Home } from 'lucide-react';
 import { BracketReferenceStrip } from '../components/EliminationCourtView';
 import { matchIsOnNet, matchIsWaitingForCourt } from '../lib/matchSchedule';
+import { resolveDisplayChampion } from '../lib/tournament/champion';
 
 const FORMAT_LABEL: Record<TournamentFormat, string> = {
   single: 'Single elimination',
@@ -129,6 +130,11 @@ export function LiveResultsView() {
     [matches]
   );
 
+  const displayChampion = useMemo(() => {
+    if (!isFinished) return null;
+    return resolveDisplayChampion(format, matches, teams);
+  }, [isFinished, format, matches, teams]);
+
   const poolStandings = useMemo(() => {
     const poolMs = matches.filter(m => m.id.startsWith('p-') || m.id.startsWith('c-'));
     if (poolMs.length === 0) return [];
@@ -196,6 +202,31 @@ export function LiveResultsView() {
       </header>
 
       <main className="mx-auto max-w-5xl space-y-6 p-4 pb-12">
+        {isFinished && (
+          <section
+            className="w95-panel border-4 border-[#000080] bg-gradient-to-b from-[#ffffcc] to-white p-5 text-center shadow-md"
+            aria-live="polite"
+          >
+            <div className="mb-2 flex items-center justify-center gap-2 text-[#000080]">
+              <Trophy className="h-8 w-8 shrink-0" aria-hidden />
+              <span className="text-xs font-extrabold uppercase tracking-widest">Tournament champion</span>
+            </div>
+            {format === 'casual' ? (
+              <p className="text-lg font-bold text-black">Session complete</p>
+            ) : displayChampion ? (
+              <p className="text-2xl font-extrabold tracking-tight text-black sm:text-3xl">{displayChampion.name}</p>
+            ) : (
+              <p className="text-lg font-bold text-zinc-700">Complete — see bracket for final placement</p>
+            )}
+            {displayChampion && format !== 'casual' && (
+              <p className="mt-2 text-xs font-semibold text-zinc-600">
+                {FORMAT_LABEL[format]}
+                {rules.bestOf === 3 ? ' · Best of 3 sets' : ' · Single set'}
+              </p>
+            )}
+          </section>
+        )}
+
         {format === 'winners-list' && (
           <section className="w95-panel space-y-3 p-4">
             <div className="w95-list-header -mx-4 -mt-4 mb-2 flex items-center gap-2">

@@ -813,6 +813,10 @@ export default function App() {
       propagateLoserToBracket(workingMatches, currentMatch, matchId, loserId);
     }
 
+    if (format === 'single' || format === 'double') {
+      workingMatches = autoAdvanceByes(workingMatches);
+    }
+
     const matchesWithNets =
       format === 'pool' || format === 'casual'
         ? assignRoundRobinNets(workingMatches, numNets)

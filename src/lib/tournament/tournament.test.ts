@@ -155,6 +155,20 @@ describe('resolveChampionTeamId', () => {
     ];
     expect(resolveChampionTeamId(m)).toBe('a');
   });
+
+  it('does not treat bye sentinel as champion', () => {
+    const m: Match[] = [
+      {
+        id: 'w1-0',
+        team1Id: 'a',
+        team2Id: null,
+        round: 1,
+        winnerId: BYE_SENTINEL,
+        nextMatchId: null
+      }
+    ];
+    expect(resolveChampionTeamId(m)).toBeNull();
+  });
 });
 
 describe('generateDoubleElimination', () => {
