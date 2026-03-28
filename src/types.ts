@@ -18,12 +18,20 @@ export interface Team {
   consecutiveWins?: number;
 }
 
+/** Per-set rally scores (team1 = match.team1Id side). */
+export interface SetScore {
+  team1: number;
+  team2: number;
+}
+
 export interface Match {
   id: string;
   team1Id: string | null;
   team2Id: string | null;
   score1?: number;
   score2?: number;
+  /** Completed sets in order; when present, winner follows best-of rules. */
+  sets?: SetScore[];
   winnerId?: string | null;
   nextMatchId?: string | null;
   loserMatchId?: string | null;

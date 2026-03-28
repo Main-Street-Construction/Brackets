@@ -1,5 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { TournamentFormat, Team, Match, TournamentRules } from './types';
+import { TournamentFormat, Team, Match, TournamentRules, SetScore } from './types';
+import {
+  generateSingleElimination,
+  generateDoubleElimination,
+  generatePoolPlay,
+  generatePlayTwice
+} from './lib/tournament/generate';
+import { assignNets } from './lib/tournament/nets';
+import {
+  autoAdvanceByes,
+  propagateWinnerToNext,
+  propagateLoserToBracket
+} from './lib/tournament/advance';
+import { matchOutcomeFromSets } from './lib/tournament/scoring';
 import { TeamCalculator } from './components/TeamCalculator';
 import { BracketView } from './components/BracketView';
 import { PoolPlayView } from './components/PoolPlayView';
@@ -367,11 +380,18 @@ export default function App() {
         const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
         await Promise.all(deletePromises);
         
-        await updateDoc(doc(db, 'tournaments', tournamentId), { isStarted: false, isFinished: false });
+        await updateDoc(doc(db, 'tournaments', tournamentId), {
+          isStarted: false,
+          isFinished: false,
+          queue: [],
+          activeNets: {}
+        });
       }
       setIsStarted(false);
       setIsFinished(false);
       setMatches([]);
+      setQueue([]);
+      setActiveNets({});
       setTournamentId(null);
     }
   };
@@ -443,275 +463,6 @@ export default function App() {
       setTournamentId(null);
       localStorage.removeItem('tournament_id');
     }
-  };
-
-  const generateSingleElimination = (teams: Team[], prefix = 'w', bracketType: 'winners' | 'losers' = 'winners'): Match[] => {
-    const numTeams = teams.length;
-    const k = Math.ceil(Math.log2(numTeams));
-    const bracketSize = Math.pow(2, k);
-    const matches: Match[] = [];
-
-    // Standard seeding: 1 vs 8, 4 vs 5, 2 vs 7, 3 vs 6
-    const getSeedOrder = (size: number): number[] => {
-      if (size === 2) return [0, 1];
-      const prev = getSeedOrder(size / 2);
-      const res: number[] = [];
-      for (const s of prev) {
-        res.push(s);
-        res.push(size - 1 - s);
-      }
-      return res;
-    };
-
-    const seedOrder = getSeedOrder(bracketSize);
-    
-    // Round 1
-    for (let i = 0; i < bracketSize / 2; i++) {
-      const t1Idx = seedOrder[i * 2];
-      const t2Idx = seedOrder[i * 2 + 1];
-      
-      matches.push({
-        id: `${prefix}1-${i}`,
-        team1Id: t1Idx < numTeams ? teams[t1Idx].id : null,
-        team2Id: t2Idx < numTeams ? teams[t2Idx].id : null,
-        round: 1,
-        bracketType,
-        nextMatchId: k > 1 ? `${prefix}2-${Math.floor(i / 2)}` : null
-      });
-    }
-
-    // Subsequent rounds
-    for (let r = 2; r <= k; r++) {
-      const matchesInRound = Math.pow(2, k - r);
-      for (let i = 0; i < matchesInRound; i++) {
-        matches.push({
-          id: `${prefix}${r}-${i}`,
-          team1Id: null,
-          team2Id: null,
-          round: r,
-          bracketType,
-          nextMatchId: r < k ? `${prefix}${r + 1}-${Math.floor(i / 2)}` : null
-        });
-      }
-    }
-
-    return matches;
-  };
-
-  const generateDoubleElimination = (teams: Team[]): Match[] => {
-    const numTeams = teams.length;
-    const k = Math.ceil(Math.log2(numTeams));
-    const bracketSize = Math.pow(2, k);
-    
-    // 1. Winners Bracket
-    const winners = generateSingleElimination(teams, 'w', 'winners');
-    
-    // 2. Losers Bracket
-    const losers: Match[] = [];
-    const numLBRounds = k > 1 ? 2 * k - 2 : 0;
-    
-    for (let r = 1; r <= numLBRounds; r++) {
-      const matchesInRound = Math.pow(2, k - 1 - Math.floor((r + 1) / 2));
-      for (let i = 0; i < matchesInRound; i++) {
-        // nextMatchId logic:
-        // If r is odd (Consolidation): l(r+1)-i (Winner goes to Team 1)
-        // If r is even (Entry): l(r+1)-Math.floor(i/2) (Winner goes to Team 1 or 2)
-        let nextMatchId = null;
-        if (r < numLBRounds) {
-          if (r % 2 !== 0) {
-            nextMatchId = `l${r + 1}-${i}`;
-          } else {
-            nextMatchId = `l${r + 1}-${Math.floor(i / 2)}`;
-          }
-        } else {
-          nextMatchId = 'gf-1';
-        }
-
-        losers.push({
-          id: `l${r}-${i}`,
-          team1Id: null,
-          team2Id: null,
-          round: r,
-          bracketType: 'losers',
-          nextMatchId
-        });
-      }
-    }
-
-    // 3. Connect WB losers to LB
-    // WB R1 losers -> LB R1
-    winners.filter(m => m.round === 1).forEach((m, i) => {
-      m.loserMatchId = `l1-${Math.floor(i / 2)}`;
-    });
-    // WB Rr losers -> LB R(2r-2) for r > 1
-    for (let r = 2; r <= k; r++) {
-      winners.filter(m => m.round === r).forEach((m, i) => {
-        const lbRound = (r - 1) * 2;
-        if (lbRound <= numLBRounds) {
-          m.loserMatchId = `l${lbRound}-${i}`;
-        }
-      });
-    }
-
-    // 4. Grand Finals
-    const wbFinal = winners.find(m => m.round === k);
-    const lbFinal = losers.find(m => m.round === numLBRounds);
-    
-    if (wbFinal) wbFinal.nextMatchId = 'gf-1';
-    if (lbFinal) lbFinal.nextMatchId = 'gf-1';
-
-    const grandFinal: Match = {
-      id: 'gf-1',
-      team1Id: null, // From WB
-      team2Id: null, // From LB
-      round: k + 1,
-      bracketType: 'winners',
-      nextMatchId: 'gf-2'
-    };
-
-    const grandFinalIfNecessary: Match = {
-      id: 'gf-2',
-      team1Id: null,
-      team2Id: null,
-      round: k + 2,
-      bracketType: 'winners',
-      nextMatchId: null
-    };
-
-    return [...winners, ...losers, grandFinal, grandFinalIfNecessary];
-  };
-
-  const autoAdvanceByes = (matches: Match[]): Match[] => {
-    let updated = [...matches];
-    let changed = true;
-    
-    while (changed) {
-      changed = false;
-      for (let i = 0; i < updated.length; i++) {
-        const m = updated[i];
-        if (m.winnerId) continue;
-        
-        // If one team is null (bye), the other advances
-        const team1Id = m.team1Id;
-        const team2Id = m.team2Id;
-
-        if (team1Id && !team2Id && m.id.includes('1-')) { // Only auto-advance in Round 1 initially
-          // Wait, actually any round if one side is null and it's a bye
-          // But we need to be careful about TBD matches.
-          // In Round 1, null means Bye. In subsequent rounds, null means TBD.
-        }
-      }
-      // Actually, a simpler way: if it's Round 1 and one team is null, it's a bye.
-      for (let i = 0; i < updated.length; i++) {
-        const m = updated[i];
-        if (m.winnerId || m.round !== 1) continue;
-        if (m.team1Id && !m.team2Id) {
-          updated[i] = { ...m, winnerId: m.team1Id, score1: 1, score2: 0 };
-          changed = true;
-          propagateWinner(updated, updated[i]);
-        } else if (!m.team1Id && m.team2Id) {
-          updated[i] = { ...m, winnerId: m.team2Id, score1: 0, score2: 1 };
-          changed = true;
-          propagateWinner(updated, updated[i]);
-        } else if (!m.team1Id && !m.team2Id) {
-          // Double bye? Rare but possible
-          updated[i] = { ...m, winnerId: 'bye', score1: 0, score2: 0 };
-          changed = true;
-          propagateWinner(updated, updated[i]);
-        }
-      }
-    }
-    return updated;
-  };
-
-  const propagateWinner = (matches: Match[], currentMatch: Match) => {
-    const winnerId = currentMatch.winnerId;
-    if (!winnerId || !currentMatch.nextMatchId) return;
-
-    const nextMatchIdx = matches.findIndex(m => m.id === currentMatch.nextMatchId);
-    if (nextMatchIdx === -1) return;
-
-    const nextMatch = { ...matches[nextMatchIdx] };
-    const matchIdx = parseInt(currentMatch.id.split('-')[1]);
-
-    if (currentMatch.id.startsWith('w')) {
-      const isTeam1 = matchIdx % 2 === 0;
-      if (isTeam1) nextMatch.team1Id = winnerId;
-      else nextMatch.team2Id = winnerId;
-    } else if (currentMatch.id.startsWith('l')) {
-      const round = currentMatch.round;
-      if (round % 2 === 1) {
-        nextMatch.team1Id = winnerId;
-      } else {
-        if (matchIdx % 2 === 0) nextMatch.team1Id = winnerId;
-        else nextMatch.team2Id = winnerId;
-      }
-    }
-    matches[nextMatchIdx] = nextMatch;
-  };
-
-  const assignNets = (matches: Match[], numNets: number): Match[] => {
-    const updated = [...matches];
-    const activeNets = new Set(updated.filter(m => m.netIndex !== undefined && !m.winnerId).map(m => m.netIndex));
-    
-    for (let i = 0; i < updated.length; i++) {
-      const m = updated[i];
-      if (m.team1Id && m.team2Id && !m.winnerId && m.netIndex === undefined) {
-        // Find first free net
-        for (let n = 0; n < numNets; n++) {
-          if (!activeNets.has(n)) {
-            updated[i] = { ...m, netIndex: n };
-            activeNets.add(n);
-            break;
-          }
-        }
-      }
-    }
-    return updated;
-  };
-
-  const generatePoolPlay = (teams: Team[]): Match[] => {
-    const matches: Match[] = [];
-    let matchCount = 1;
-    for (let i = 0; i < teams.length; i++) {
-      for (let j = i + 1; j < teams.length; j++) {
-        matches.push({
-          id: `p-${matchCount++}`,
-          team1Id: teams[i].id,
-          team2Id: teams[j].id,
-          round: 1
-        });
-      }
-    }
-    return matches;
-  };
-
-  const generatePlayTwice = (teams: Team[]): Match[] => {
-    const matches: Match[] = [];
-    const n = teams.length;
-    if (n < 2) return [];
-
-    // Pattern: (i, (i + 1) % n) ensures every team plays exactly twice
-    // For even n, this naturally splits into 2 rounds
-    // For odd n, it splits into 3 rounds
-    for (let i = 0; i < n; i++) {
-      const team1 = teams[i];
-      const team2 = teams[(i + 1) % n];
-      
-      let round = (i % 2) + 1;
-      // If n is odd, the last game (n-1, 0) would conflict with Round 1 (team 0) and Round 2 (team n-1)
-      if (n % 2 !== 0 && i === n - 1) {
-        round = 3;
-      }
-
-      matches.push({
-        id: `pt-${i}`,
-        team1Id: team1.id,
-        team2Id: team2.id,
-        round: round
-      });
-    }
-    return matches;
   };
 
   const onJoinQueue = async (teamId: string, currentTeams?: Team[]) => {
@@ -808,17 +559,29 @@ export default function App() {
     }
   };
 
-  const updateScore = async (matchId: string, s1: number, s2: number) => {
-    if (rules.winByTwo && Math.abs(s1 - s2) < 2) return;
-    
+  const updateScore = async (matchId: string, sets: SetScore[]) => {
+    const outcome = matchOutcomeFromSets(sets, rules);
+    if (!outcome.ok) return;
+
     const updatedMatches = [...matches];
     const matchIdx = updatedMatches.findIndex(m => m.id === matchId);
     if (matchIdx === -1) return;
 
-    const currentMatch = { ...updatedMatches[matchIdx], score1: s1, score2: s2 };
-    const winnerId = s1 > s2 ? currentMatch.team1Id : s2 > s1 ? currentMatch.team2Id : null;
-    const loserId = s1 > s2 ? currentMatch.team2Id : s2 > s1 ? currentMatch.team1Id : null;
-    currentMatch.winnerId = winnerId;
+    const winnerId = outcome.winnerIsTeam1
+      ? updatedMatches[matchIdx].team1Id
+      : updatedMatches[matchIdx].team2Id;
+    const loserId = outcome.winnerIsTeam1
+      ? updatedMatches[matchIdx].team2Id
+      : updatedMatches[matchIdx].team1Id;
+
+    const currentMatch: Match = {
+      ...updatedMatches[matchIdx],
+      sets,
+      score1: outcome.setsWon1,
+      score2: outcome.setsWon2,
+      winnerId
+    };
+
     updatedMatches[matchIdx] = currentMatch;
 
     if (format === 'winners-list' && winnerId && loserId) {
@@ -870,7 +633,7 @@ export default function App() {
         };
         
         if (tournamentId) {
-          await updateDoc(doc(db, 'tournaments', tournamentId, 'matches', matchId), currentMatch);
+          await setDoc(doc(db, 'tournaments', tournamentId, 'matches', matchId), currentMatch);
           await setDoc(doc(db, 'tournaments', tournamentId, 'matches', nextMatchId), nextMatch);
           // Reset wins if team is new or both off
           const t1Wins = nextTeam1Id === winnerId && !reachedMax ? updatedWinnerWins : 0;
@@ -898,7 +661,7 @@ export default function App() {
       } else {
         // Net becomes empty
         if (tournamentId) {
-          await updateDoc(doc(db, 'tournaments', tournamentId, 'matches', matchId), currentMatch);
+          await setDoc(doc(db, 'tournaments', tournamentId, 'matches', matchId), currentMatch);
           await updateDoc(doc(db, 'tournaments', tournamentId, 'teams', winnerId), { consecutiveWins: reachedMax ? 0 : updatedWinnerWins });
           await updateDoc(doc(db, 'tournaments', tournamentId, 'teams', loserId), { consecutiveWins: 0 });
           await updateDoc(doc(db, 'tournaments', tournamentId), { 
@@ -919,81 +682,42 @@ export default function App() {
       return;
     }
 
-    // Propagate winner
-    if (currentMatch.nextMatchId && winnerId) {
-      const nextMatchIdx = updatedMatches.findIndex(m => m.id === currentMatch.nextMatchId);
-      if (nextMatchIdx !== -1) {
-        const nextMatch = { ...updatedMatches[nextMatchIdx] };
-        
-        if (currentMatch.id.startsWith('w')) {
-          // Winners bracket propagation
-          const isTeam1Slot = parseInt(matchId.split('-')[1]) % 2 === 0;
-          if (isTeam1Slot) nextMatch.team1Id = winnerId;
-          else nextMatch.team2Id = winnerId;
-        } else if (currentMatch.id.startsWith('l')) {
-          // Losers bracket propagation
-          const round = currentMatch.round;
-          const matchIdx = parseInt(matchId.split('-')[1]);
-          if (round % 2 === 1) {
-            // Consolidation -> Entry: Winner always goes to Team 1
-            nextMatch.team1Id = winnerId;
-          } else {
-            // Entry -> Consolidation: Winner goes to Team 1 or 2
-            if (matchIdx % 2 === 0) nextMatch.team1Id = winnerId;
-            else nextMatch.team2Id = winnerId;
-          }
-        } else if (currentMatch.id === 'gf-1') {
-          // Grand Final 1
-          // If LB winner (team2) wins, they play a second match (GF2)
-          if (winnerId === currentMatch.team2Id) {
-            nextMatch.team1Id = currentMatch.team1Id;
-            nextMatch.team2Id = currentMatch.team2Id;
-          } else {
-            // WB winner won, tournament over
-            setIsFinished(true);
-            if (tournamentId) updateDoc(doc(db, 'tournaments', tournamentId), { isFinished: true });
-          }
-        }
-
-        updatedMatches[nextMatchIdx] = nextMatch;
-      }
+    let tournamentComplete = false;
+    if (winnerId && format !== 'winners-list') {
+      tournamentComplete = propagateWinnerToNext(
+        updatedMatches,
+        currentMatch,
+        matchId,
+        winnerId
+      ).tournamentComplete;
     }
 
-    // Propagate loser (Double Elimination)
     if (currentMatch.loserMatchId && loserId) {
-      const loserMatchIdx = updatedMatches.findIndex(m => m.id === currentMatch.loserMatchId);
-      if (loserMatchIdx !== -1) {
-        const loserMatch = { ...updatedMatches[loserMatchIdx] };
-        if (currentMatch.round === 1) {
-          const matchIdx = parseInt(matchId.split('-')[1]);
-          if (matchIdx % 2 === 0) loserMatch.team1Id = loserId;
-          else loserMatch.team2Id = loserId;
-        } else {
-          // Losers from WB always go to team2 slot in LB entry rounds
-          loserMatch.team2Id = loserId;
-        }
-        updatedMatches[loserMatchIdx] = loserMatch;
-      }
+      propagateLoserToBracket(updatedMatches, currentMatch, matchId, loserId);
     }
 
     const matchesWithNets = assignNets(updatedMatches, numNets);
 
     if (tournamentId) {
       await setDoc(doc(db, 'tournaments', tournamentId, 'matches', matchId), currentMatch);
-      
-      // Update any other matches that were modified (propagation or net assignment)
+
       for (const m of matchesWithNets) {
         const originalMatch = matches.find(om => om.id === m.id);
-        
-        // Check if match was updated in updatedMatches or if netIndex was assigned
         if (JSON.stringify(m) !== JSON.stringify(originalMatch)) {
           if (m.id !== matchId) {
             await setDoc(doc(db, 'tournaments', tournamentId, 'matches', m.id), m);
           }
         }
       }
+
+      if (tournamentComplete) {
+        await updateDoc(doc(db, 'tournaments', tournamentId), { isFinished: true });
+      }
     } else {
       setMatches(matchesWithNets);
+      if (tournamentComplete) {
+        setIsFinished(true);
+      }
     }
   };
 
@@ -1016,144 +740,120 @@ export default function App() {
         const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
         await Promise.all(deletePromises);
         
-        await updateDoc(doc(db, 'tournaments', tournamentId), { isStarted: false, isFinished: false });
+        await updateDoc(doc(db, 'tournaments', tournamentId), {
+          isStarted: false,
+          isFinished: false,
+          queue: [],
+          activeNets: {}
+        });
       }
-      
+
       setIsStarted(false);
       setIsFinished(false);
       setMatches([]);
+      setQueue([]);
+      setActiveNets({});
     }
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 pb-20">
-      {/* Header */}
-      <header className="bg-white border-b border-zinc-200 sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="bg-grey-blue p-2 rounded-lg">
-              <Trophy className="w-6 h-6 text-white" />
+    <div className="min-h-screen pb-24 pt-[max(0.5rem,env(safe-area-inset-top))] px-2 sm:px-3">
+      <div className="max-w-7xl mx-auto w95-window flex flex-col min-h-[calc(100dvh-1.25rem)] sticky top-1 z-20">
+        <header className="shrink-0">
+          <div className="w95-titlebar">
+            <div className="flex items-center gap-2 min-w-0">
+              <Trophy className="w-4 h-4 shrink-0 opacity-90" />
+              <span className="truncate text-xs sm:text-sm">Brackets — Tournament Explorer</span>
             </div>
-            <h1 className="text-xl font-bold tracking-tight hidden sm:block">Brackets</h1>
           </div>
-          
-          <div className="flex items-center gap-1.5 sm:gap-4">
+          <div className="w95-toolbar flex-wrap justify-end gap-1">
             {user ? (
-              <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-1 w-full sm:w-auto">
                 {!tournamentId && !isStarted && (
-                  <div className="flex items-center gap-1.5 sm:gap-2">
+                  <>
                     <input
                       type="text"
                       placeholder="Code"
                       value={joinCode}
                       onChange={(e) => setJoinCode(e.target.value)}
-                      className="w-16 sm:w-32 px-2 sm:px-3 py-1.5 text-xs sm:text-sm border border-zinc-200 rounded-lg focus:ring-2 focus:ring-grey-blue outline-none uppercase"
+                      className="w95-input w-20 sm:w-32 uppercase text-xs py-1 min-h-9"
                     />
-                    <button
-                      onClick={joinTournament}
-                      className="bg-zinc-100 text-zinc-700 px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold hover:bg-zinc-200 transition-colors flex items-center gap-1 sm:gap-2"
-                    >
-                      <LogIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <button type="button" onClick={joinTournament} className="w95-btn flex items-center gap-1 text-xs">
+                      <LogIn className="w-3.5 h-3.5" />
                       Join
                     </button>
-                  </div>
+                  </>
                 )}
-
                 {tournamentId && (
-                  <div className="flex items-center gap-2 bg-grey-green/10 px-3 py-1.5 rounded-lg border border-grey-green/20">
-                    <Share2 className="w-4 h-4 text-grey-blue" />
-                    <span className="text-sm font-bold text-grey-blue">{inviteCode}</span>
-                  </div>
+                  <span className="w95-inset px-2 py-1 text-xs font-bold flex items-center gap-1">
+                    <Share2 className="w-3.5 h-3.5" />
+                    {inviteCode}
+                  </span>
                 )}
-
                 {isStarted && (isCreator || !tournamentId) && (
-                  <div className="flex items-center gap-2">
+                  <>
                     {!isFinished && (
-                      <button
-                        onClick={finishTournament}
-                        className="text-sm font-medium text-grey-blue hover:text-grey-blue/80 transition-colors flex items-center gap-2"
-                      >
-                        <CheckCircle className="w-4 h-4" />
-                        <span className="hidden sm:inline">Finish Tournament</span>
+                      <button type="button" onClick={finishTournament} className="w95-btn flex items-center gap-1 text-xs">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Finish</span>
                       </button>
                     )}
-                    <button
-                      onClick={abortTournament}
-                      className="text-sm font-medium text-zinc-500 hover:text-red-600 transition-colors flex items-center gap-2"
-                    >
-                      <Trash2 className="w-4 h-4" />
+                    <button type="button" onClick={abortTournament} className="w95-btn flex items-center gap-1 text-xs">
+                      <Trash2 className="w-3.5 h-3.5" />
                       <span className="hidden sm:inline">Abort</span>
                     </button>
-                    <button
-                      onClick={resetTournament}
-                      className="text-sm font-medium text-zinc-500 hover:text-grey-blue transition-colors flex items-center gap-2"
-                    >
-                      <Settings className="w-4 h-4" />
+                    <button type="button" onClick={resetTournament} className="w95-btn flex items-center gap-1 text-xs">
+                      <Settings className="w-3.5 h-3.5" />
                       <span className="hidden sm:inline">Reset</span>
                     </button>
-                  </div>
+                  </>
                 )}
-
-                <button
-                  onClick={logout}
-                  className="text-xs font-medium text-zinc-500 hover:text-zinc-700"
-                >
+                <button type="button" onClick={logout} className="w95-btn text-xs">
                   Sign Out
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <div className="hidden sm:flex items-center gap-2 bg-zinc-100 px-3 py-1.5 rounded-lg border border-zinc-200">
-                  <ShieldCheck className="w-4 h-4 text-zinc-500" />
-                  <span className="text-xs font-bold text-zinc-600">Local Mode</span>
-                </div>
-                <button
-                  onClick={login}
-                  className="bg-grey-blue text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-grey-blue/90 transition-colors flex items-center gap-2"
-                >
-                  <LogIn className="w-4 h-4" />
+              <div className="flex flex-wrap items-center justify-end gap-1 w-full">
+                <span className="hidden sm:inline w95-inset px-2 py-1 text-xs font-bold">
+                  Local Mode
+                </span>
+                <button type="button" onClick={login} className="w95-btn-default text-xs flex items-center gap-1">
+                  <LogIn className="w-3.5 h-3.5" />
                   Sign In
                 </button>
               </div>
             )}
           </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="flex-1 overflow-auto bg-[#c0c0c0] px-2 py-3 sm:px-4 sm:py-4">
         {!isStarted ? (
           <div className="space-y-8">
             {/* Tab Switcher */}
             <div className="flex justify-center">
-              <div className="bg-white p-1 rounded-2xl border border-zinc-200 shadow-sm flex gap-1">
+              <div className="w95-segment flex max-w-md w-full">
                 <button
+                  type="button"
+                  data-active={activeTab === 'tournaments' ? 'true' : 'false'}
                   onClick={() => {
                     setActiveTab('tournaments');
                     if (format === 'winners-list') setFormat('single');
                   }}
-                  className={cn(
-                    "px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",
-                    activeTab === 'tournaments' 
-                      ? "bg-grey-blue text-white shadow-md" 
-                      : "text-zinc-500 hover:bg-zinc-50"
-                  )}
+                  className="flex items-center justify-center gap-2"
                 >
-                  <GitMerge className="w-4 h-4" />
+                  <GitMerge className="w-4 h-4 shrink-0" />
                   Tournaments
                 </button>
                 <button
+                  type="button"
+                  data-active={activeTab === 'winners-list' ? 'true' : 'false'}
                   onClick={() => {
                     setActiveTab('winners-list');
                     setFormat('winners-list');
                   }}
-                  className={cn(
-                    "px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",
-                    activeTab === 'winners-list' 
-                      ? "bg-grey-blue text-white shadow-md" 
-                      : "text-zinc-500 hover:bg-zinc-50"
-                  )}
+                  className="flex items-center justify-center gap-2"
                 >
-                  <Users className="w-4 h-4" />
+                  <Users className="w-4 h-4 shrink-0" />
                   Winners List
                 </button>
               </div>
@@ -1163,11 +863,11 @@ export default function App() {
             {/* Left Column: Team Management & Rules */}
             <div className="lg:col-span-2 space-y-6">
               {/* Rules Section */}
-              <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm">
-                <h2 className="text-lg font-semibold mb-6 flex items-center gap-2">
-                  <ShieldCheck className="w-5 h-5 text-grey-blue" />
+              <div className="w95-panel">
+                <div className="w95-list-header mb-3 -mx-3 -mt-3 sm:-mx-4 sm:-mt-4 flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4" />
                   Tournament Rules
-                </h2>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div className="space-y-4">
                     <label className="block text-sm font-bold text-zinc-700">Set Format</label>
@@ -1542,14 +1242,14 @@ export default function App() {
           </div>
         </div>
       ) : (
-          <div className="max-w-7xl mx-auto px-4 py-8" id="tournament-view">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+          <div id="tournament-view">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
               <div>
-                <h1 className="text-3xl font-bold text-zinc-900 mb-2">Tournament Live</h1>
+                <h1 className="text-lg sm:text-xl font-bold text-black mb-2 border-b-2 border-[#808080] pb-1">Tournament Live</h1>
                 <div className="flex flex-wrap gap-2">
-                  <div className="bg-white border border-zinc-200 px-3 py-2 rounded-lg flex items-center gap-2 shadow-sm">
-                    <Info className="w-4 h-4 text-grey-blue" />
-                    <span className="text-xs font-bold text-zinc-700">
+                  <div className="w95-inset px-2 py-1.5 flex items-center gap-2 text-xs font-bold">
+                    <Info className="w-4 h-4 shrink-0" />
+                    <span className="text-black">
                       {rules.pointsToWin === 0 ? 'Traditional' : `To ${rules.pointsToWin}`}
                       {rules.bestOf === 3 && ' • Best of 3'}
                       {rules.serveToWin && ' • Serve to Win'}
@@ -1557,44 +1257,39 @@ export default function App() {
                     </span>
                   </div>
                   {tournamentId && (
-                    <div className="bg-grey-blue text-white px-3 py-2 rounded-lg flex items-center gap-2 shadow-sm">
+                    <div className="px-2 py-1.5 flex items-center gap-2 text-xs font-bold uppercase bg-[#000080] text-white border border-black">
                       <Share2 className="w-4 h-4" />
-                      <span className="text-xs font-bold uppercase tracking-wider">{inviteCode}</span>
+                      {inviteCode}
                     </div>
                   )}
                   {isFinished && (
-                    <div className="bg-grey-green text-white px-3 py-2 rounded-lg flex items-center gap-2 shadow-sm">
+                    <div className="w95-inset px-2 py-1.5 flex items-center gap-2 text-xs font-bold bg-[#d4e8d4]">
                       <Trophy className="w-4 h-4" />
-                      <span className="text-xs font-bold uppercase tracking-wider">Tournament Finished</span>
+                      Finished
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => setIsStarted(false)}
-                  className="bg-white text-zinc-700 border border-zinc-200 px-4 py-2 rounded-lg text-sm font-bold hover:bg-zinc-50 transition-colors flex items-center gap-2"
+                  className="w95-btn flex items-center gap-2 text-xs sm:text-sm"
                 >
                   <Settings className="w-4 h-4" />
                   Setup
                 </button>
                 {isCreator && !isFinished && (
-                  <button
-                    onClick={endTournament}
-                    className="bg-grey-blue text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-grey-blue/90 transition-colors flex items-center gap-2"
-                  >
+                  <button type="button" onClick={endTournament} className="w95-btn-default flex items-center gap-2 text-xs sm:text-sm">
                     <Trophy className="w-4 h-4" />
-                    End Tournament
+                    End
                   </button>
                 )}
                 {isFinished && isCreator && (
-                  <button
-                    onClick={resetToSetup}
-                    className="bg-grey-blue text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-grey-blue/90 transition-colors flex items-center gap-2"
-                  >
+                  <button type="button" onClick={resetToSetup} className="w95-btn-default flex items-center gap-2 text-xs sm:text-sm">
                     <Plus className="w-4 h-4" />
-                    New Tournament
+                    New
                   </button>
                 )}
               </div>
@@ -1622,6 +1317,12 @@ export default function App() {
           </div>
         )}
       </main>
+        <footer className="w95-statusbar shrink-0">
+          <span>{isStarted ? (isFinished ? 'Tournament finished' : 'Tournament in progress') : 'Ready to set up'}</span>
+          {tournamentId && <span>Cloud sync on</span>}
+          {!tournamentId && <span>Local only</span>}
+        </footer>
+      </div>
     </div>
   );
 }

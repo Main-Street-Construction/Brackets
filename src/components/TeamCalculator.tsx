@@ -56,33 +56,33 @@ export const TeamCalculator: React.FC = () => {
   }, [playerCount]);
 
   return (
-    <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm">
-      <div className="flex items-center gap-2 mb-4">
-        <Users className="w-5 h-5 text-grey-blue" />
-        <h2 className="text-lg font-semibold">Team Size Calculator</h2>
+    <div className="w95-panel">
+      <div className="w95-list-header -mx-3 -mt-3 sm:-mx-4 sm:-mt-4 mb-3 flex items-center gap-2">
+        <Users className="w-4 h-4" />
+        Team size calculator
       </div>
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-zinc-700 mb-1">
-            Total Players
+          <label className="block text-xs font-bold text-black mb-1 uppercase tracking-wide">
+            Total players
           </label>
           <input
             type="number"
             value={playerCount}
             onChange={(e) => setPlayerCount(Math.max(0, parseInt(e.target.value) || 0))}
-            className="w-full px-3 py-2 border border-zinc-300 rounded-md focus:ring-2 focus:ring-grey-blue focus:border-grey-blue outline-none"
+            className="w95-input min-h-10 text-sm"
           />
         </div>
 
         {calculation ? (
-          <div className="p-4 bg-grey-green/10 rounded-lg border border-grey-green/20">
-            <div className="text-sm text-grey-blue font-bold mb-2">
+          <div className="p-3 w95-inset border border-black">
+            <div className="text-xs text-black font-bold mb-2">
               Recommended: {calculation.teamCount} Teams
             </div>
             <div className="space-y-1">
               {calculation.distribution.map((d, i) => (
-                <div key={i} className="text-sm text-grey-blue/80 flex justify-between">
+                <div key={i} className="text-sm text-black flex justify-between font-bold">
                   <span>{d.count} teams of</span>
                   <span className="font-bold">{d.size} players</span>
                 </div>
@@ -91,9 +91,9 @@ export const TeamCalculator: React.FC = () => {
           </div>
         ) : (
           playerCount > 0 && (
-            <div className="p-4 bg-amber-50 rounded-lg border border-amber-100 flex gap-2 items-start">
-              <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5" />
-              <p className="text-sm text-amber-800">
+            <div className="p-3 w95-inset border-2 border-red-700 flex gap-2 items-start">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <p className="text-xs font-bold text-black">
                 Not enough players to form standard 5-7 person teams.
               </p>
             </div>
