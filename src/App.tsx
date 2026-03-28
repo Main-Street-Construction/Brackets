@@ -6,7 +6,7 @@ import {
   generatePoolPlay,
   generatePlayTwice
 } from './lib/tournament/generate';
-import { assignNets } from './lib/tournament/nets';
+import { assignNets, assignPlayTwiceNets } from './lib/tournament/nets';
 import {
   autoAdvanceByes,
   propagateWinnerToNext,
@@ -17,6 +17,7 @@ import { resolveDisplayChampion } from './lib/tournament/champion';
 import { TeamCalculator } from './components/TeamCalculator';
 import { BracketView } from './components/BracketView';
 import { PoolPlayView } from './components/PoolPlayView';
+import { PlayTwiceView } from './components/PlayTwiceView';
 import { Trophy, Play, Plus, Trash2, LayoutGrid, GitMerge, Repeat, Users, Share2, LogIn, ShieldCheck, Info, RefreshCw, CheckCircle, Home } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -355,7 +356,7 @@ export default function App() {
       initialMatches = assignNets(initialMatches, numNets);
     } else if (format === 'play-twice') {
       initialMatches = generatePlayTwice(teams);
-      initialMatches = assignNets(initialMatches, numNets);
+      initialMatches = assignPlayTwiceNets(initialMatches, numNets);
     } else if (format === 'winners-list') {
       let currentTeams = teams;
       if (teams.length === 0 && preSignupCount > 0) {
@@ -758,7 +759,10 @@ export default function App() {
       propagateLoserToBracket(updatedMatches, currentMatch, matchId, loserId);
     }
 
-    const matchesWithNets = assignNets(updatedMatches, numNets);
+    const matchesWithNets =
+      format === 'play-twice'
+        ? assignPlayTwiceNets(updatedMatches, numNets)
+        : assignNets(updatedMatches, numNets);
 
     if (tournamentId && db) {
       await setDoc(doc(db, 'tournaments', tournamentId, 'matches', matchId), currentMatch);
@@ -1090,7 +1094,10 @@ export default function App() {
                       </div>
                       <div className="text-left">
                         <div className="text-sm font-bold text-zinc-700">Serve to Win</div>
-                        <div className="text-xs text-zinc-500">Must be serving to score the winning point.</div>
+                        <div className="text-xs text-zinc-500">
+                          Shows a clear rule on score cards: game point on serve. Teams play by it; you enter
+                          final scores only.
+                        </div>
                       </div>
                     </button>
 
@@ -1431,6 +1438,7 @@ export default function App() {
                       First to {rules.pointsToWin}
                       {rules.bestOf === 3 ? ' · Best of 3' : ' · One set'}
                       {rules.winByTwo ? ' · Win by 2' : ''}
+                      {rules.serveToWin ? ' · Serve to win (game point on serve)' : ''}
                     </p>
                   </>
                 ) : (
@@ -1452,10 +1460,18 @@ export default function App() {
                     <span>
                       First to {rules.pointsToWin}
                       {rules.bestOf === 3 && ' · Best of 3'}
-                      {rules.serveToWin && ' · Serve note'}
                       {rules.winByTwo && ' · Win by 2'}
                     </span>
                   </div>
+                  {rules.serveToWin && (
+                    <div className="flex max-w-full items-center gap-2 rounded-lg border-2 border-amber-400 bg-amber-50 px-2 py-1.5 text-xs font-bold text-amber-950">
+                      <Info className="h-4 w-4 shrink-0 text-amber-800" />
+                      <span className="leading-snug">
+                        Serve to win: game-winning point must be on serve (honor on court — you record final
+                        scores).
+                      </span>
+                    </div>
+                  )}
                   {tournamentId && (
                     <div className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5 text-xs font-semibold uppercase text-white">
                       <Share2 className="h-4 w-4" />
@@ -1509,7 +1525,17 @@ export default function App() {
                 isFinished={isFinished}
                 rules={rules}
               />
-            ) : (format === 'pool' || format === 'play-twice') ? (
+            ) : format === 'play-twice' ? (
+              <PlayTwiceView
+                matches={matches}
+                teams={teams}
+                numNets={numNets}
+                onUpdateScore={updateScore}
+                isFinished={isFinished}
+                rules={rules}
+                highlightTeamId={isFinished ? displayChampion?.id : undefined}
+              />
+            ) : format === 'pool' ? (
               <PoolPlayView
                 matches={matches}
                 teams={teams}

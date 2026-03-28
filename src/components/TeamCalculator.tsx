@@ -8,7 +8,12 @@ interface TeamCalculation {
 }
 
 export const TeamCalculator: React.FC = () => {
-  const [playerCount, setPlayerCount] = useState<number>(24);
+  const [playersInput, setPlayersInput] = useState('24');
+
+  const playerCount = (() => {
+    const n = parseInt(playersInput, 10);
+    return Number.isFinite(n) ? n : 0;
+  })();
 
   const calculation = useMemo((): TeamCalculation | null => {
     if (playerCount < 5) return null;
@@ -68,10 +73,20 @@ export const TeamCalculator: React.FC = () => {
             Total players
           </label>
           <input
-            type="number"
-            value={playerCount}
-            onChange={(e) => setPlayerCount(Math.max(0, parseInt(e.target.value) || 0))}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={playersInput}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === '') {
+                setPlayersInput('');
+                return;
+              }
+              if (/^\d+$/.test(v)) setPlayersInput(v);
+            }}
             className="w95-input min-h-10 text-sm"
+            placeholder="Players"
           />
         </div>
 
@@ -90,7 +105,7 @@ export const TeamCalculator: React.FC = () => {
             </div>
           </div>
         ) : (
-          playerCount > 0 && (
+          playersInput !== '' && playerCount > 0 && (
             <div className="p-3 w95-inset border-2 border-red-700 flex gap-2 items-start">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <p className="text-xs font-bold text-black">

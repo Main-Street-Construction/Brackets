@@ -10,6 +10,8 @@ interface MatchCardProps {
   onUpdateScore: (matchId: string, sets: SetScore[]) => void;
   disabled?: boolean;
   rules?: TournamentRules;
+  /** When false, hide the small NET chip (parent already shows court). Default true. */
+  showNetBadge?: boolean;
 }
 
 function countSetWins(sets: SetScore[], rules: TournamentRules): { w1: number; w2: number } {
@@ -24,7 +26,14 @@ function countSetWins(sets: SetScore[], rules: TournamentRules): { w1: number; w
   return { w1, w2 };
 }
 
-export const MatchCard: React.FC<MatchCardProps> = ({ match, teams, onUpdateScore, disabled, rules }) => {
+export const MatchCard: React.FC<MatchCardProps> = ({
+  match,
+  teams,
+  onUpdateScore,
+  disabled,
+  rules,
+  showNetBadge = true
+}) => {
   const r = rules ?? {
     pointsToWin: 25,
     bestOf: 1,
@@ -38,9 +47,17 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, teams, onUpdateScor
   const [cur2, setCur2] = React.useState<number | string>('');
   const [draftError, setDraftError] = React.useState<string | null>(null);
 
+  const setsFingerprint =
+    match.sets === undefined
+      ? ''
+      : `${match.sets.length}:${match.sets.map(s => `${s.team1}-${s.team2}`).join(';')}`;
+
   React.useEffect(() => {
     setCompletedSets(match.sets ?? []);
-  }, [match.sets, match.id]);
+    setCur1('');
+    setCur2('');
+    setDraftError(null);
+  }, [match.id, match.team1Id, match.team2Id, match.netIndex, setsFingerprint]);
 
   const team1 = teams.find(t => t.id === match.team1Id);
   const team2 = teams.find(t => t.id === match.team2Id);
@@ -106,31 +123,48 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, teams, onUpdateScor
         : `Set ${nextSetIndex + 1} (to ${r.pointsToWin})`
       : `Set (to ${r.pointsToWin})`;
 
+  const showServeRuleCallout = Boolean(r.serveToWin && team1 && team2 && !match.winnerId);
+
   return (
     <div className="match-card w-full">
-      {match.netIndex !== undefined && !match.winnerId && (
-        <div className="flex justify-end mb-2">
+      {showNetBadge && match.netIndex !== undefined && !match.winnerId && (
+        <div className="mb-2 flex justify-end">
           <div className="w95-inset px-2 py-0.5 text-[10px] font-semibold text-zinc-800">
             NET {match.netIndex + 1}
           </div>
         </div>
       )}
 
+      {showServeRuleCallout && (
+        <div
+          className="mb-3 rounded-lg border-2 border-amber-400 bg-amber-50 px-3 py-2 text-center shadow-sm"
+          role="status"
+        >
+          <p className="text-[10px] font-extrabold uppercase tracking-wide text-amber-950">
+            Director rule · Serve to win
+          </p>
+          <p className="mt-1 text-[11px] font-semibold leading-snug text-amber-950/90">
+            Rally scoring on the court — the <span className="underline">game-winning point</span> must be
+            scored on serve. Enter the final set scores below when the match is done.
+          </p>
+        </div>
+      )}
+
       {bestOf === 3 && completedSets.length > 0 && !match.winnerId && (
         <div className="mb-2 flex flex-wrap gap-1.5">
           {completedSets.map((s, i) => (
-            <span key={i} className="text-[10px] font-bold px-2 py-1 w95-inset text-black">
+            <span key={i} className="w95-inset px-2 py-1 text-[10px] font-bold text-black">
               S{i + 1}: {s.team1}-{s.team2}
             </span>
           ))}
-          <span className="text-[10px] font-bold text-black self-center">
+          <span className="self-center text-[10px] font-bold text-black">
             ({w1}-{w2} sets)
           </span>
         </div>
       )}
 
       <div className="space-y-2">
-        <div className="text-[10px] font-bold text-black uppercase tracking-wide px-1">{setLabel}</div>
+        <div className="px-1 text-[10px] font-bold uppercase tracking-wide text-black">{setLabel}</div>
 
         <div
           className={cn(
@@ -138,8 +172,8 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, teams, onUpdateScor
             match.winnerId === team1?.id && team1 ? 'w95-row-winner' : 'bg-white'
           )}
         >
-          <span className="text-sm font-bold truncate flex-1 pr-2">
-            {team1?.name || <span className="text-black/50 italic font-normal">TBD</span>}
+          <span className="flex-1 truncate pr-2 text-sm font-bold">
+            {team1?.name || <span className="font-normal italic text-black/50">TBD</span>}
           </span>
           <input
             type="number"
@@ -156,8 +190,8 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, teams, onUpdateScor
             match.winnerId === team2?.id && team2 ? 'w95-row-winner' : 'bg-white'
           )}
         >
-          <span className="text-sm font-bold truncate flex-1 pr-2">
-            {team2?.name || <span className="text-black/50 italic font-normal">TBD</span>}
+          <span className="flex-1 truncate pr-2 text-sm font-bold">
+            {team2?.name || <span className="font-normal italic text-black/50">TBD</span>}
           </span>
           <input
             type="number"
@@ -170,22 +204,16 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, teams, onUpdateScor
         </div>
 
         {draftError && (
-          <div className="flex items-center gap-2 text-[10px] font-bold text-black bg-white p-2 border-2 border-red-700">
-            <AlertCircle className="w-3 h-3 shrink-0" />
+          <div className="flex items-center gap-2 border-2 border-red-700 bg-white p-2 text-[10px] font-bold text-black">
+            <AlertCircle className="h-3 w-3 shrink-0" />
             {draftError}
           </div>
         )}
 
         {r.winByTwo && !match.winnerId && team1 && team2 && (
-          <div className="text-[9px] font-semibold uppercase tracking-wider text-center text-zinc-600 pt-1">
+          <div className="pt-1 text-center text-[9px] font-semibold uppercase tracking-wider text-zinc-600">
             Win by 2 per set
           </div>
-        )}
-
-        {r.serveToWin && (
-          <p className="text-[9px] text-black px-1 w95-inset py-1">
-            Serve-to-win needs rally tracking; using rally set totals only.
-          </p>
         )}
 
         {!match.winnerId && team1 && team2 && !disabled && !matchDecided && (
@@ -193,15 +221,20 @@ export const MatchCard: React.FC<MatchCardProps> = ({ match, teams, onUpdateScor
             type="button"
             onClick={bestOf === 3 ? handleSubmitBo3Record : handleSubmitBo1}
             disabled={cur1 === '' || cur2 === '' || n1 === n2}
-            className="w95-btn-default w-full mt-2 min-h-11 py-2.5 text-sm"
+            className="w95-btn-default mt-2 min-h-11 w-full py-2.5 text-sm"
           >
-            {bestOf === 3 ? (completedSets.length > 0 ? 'Record set' : 'Record set 1') : 'Submit match'}
+            {bestOf === 3
+              ? completedSets.length > 0
+                ? 'Record set'
+                : 'Record set 1'
+              : 'Submit match'}
           </button>
         )}
 
         {match.winnerId && match.sets && match.sets.length > 0 && (
-          <div className="text-[10px] text-black font-mono pt-1">
-            Final: {match.sets.map(s => `${s.team1}-${s.team2}`).join(', ')} ({match.score1}-{match.score2} sets)
+          <div className="pt-1 font-mono text-[10px] text-black">
+            Final: {match.sets.map(s => `${s.team1}-${s.team2}`).join(', ')} ({match.score1}-{match.score2}{' '}
+            sets)
           </div>
         )}
       </div>

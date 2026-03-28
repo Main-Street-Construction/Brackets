@@ -33,7 +33,6 @@ export const WinnersListView: React.FC<WinnersListViewProps> = ({
   rules
 }) => {
   const [newTeamName, setNewTeamName] = React.useState('');
-  console.log('WinnersListView render:', { queue, teamsCount: teams.length, matchesCount: matches.length });
   const activeMatches = matches.filter(m => m.netIndex !== undefined && !m.winnerId);
   const completedMatches = matches.filter(m => m.winnerId).sort((a, b) => (b.round || 0) - (a.round || 0));
 
@@ -210,6 +209,7 @@ export const WinnersListView: React.FC<WinnersListViewProps> = ({
                         onUpdateScore={onUpdateScore}
                         disabled={isFinished}
                         rules={rules}
+                        showNetBadge={false}
                       />
                       {!match.team2Id && (
                         <div className="flex items-center gap-2 px-2 py-1.5 w95-inset border border-black text-[10px] font-bold uppercase">

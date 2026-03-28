@@ -4,7 +4,7 @@ import {
   generateDoubleElimination,
   generatePlayTwice
 } from './generate';
-import { assignNets } from './nets';
+import { assignNets, assignPlayTwiceNets } from './nets';
 import {
   parseBracketMatchIndex,
   propagateWinnerToNext,
@@ -165,5 +165,15 @@ describe('assignNets (play-twice)', () => {
     const assigned = matches.filter(m => m.netIndex !== undefined && !m.winnerId);
     expect(assigned.length).toBe(3);
     expect(new Set(assigned.map(m => m.netIndex)).size).toBe(3);
+  });
+
+  it('assignPlayTwiceNets matches assignNets for capacity (ordered queue)', () => {
+    const teams = teams4(6);
+    const base = generatePlayTwice(teams);
+    const a = assignNets(base, 3);
+    const b = assignPlayTwiceNets(base, 3);
+    const ca = a.filter(m => m.netIndex !== undefined && !m.winnerId).length;
+    const cb = b.filter(m => m.netIndex !== undefined && !m.winnerId).length;
+    expect(ca).toBe(cb);
   });
 });
