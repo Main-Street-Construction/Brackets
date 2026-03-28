@@ -72,6 +72,55 @@ describe('autoAdvanceByes', () => {
     const withWinner = r1.filter(x => x.winnerId && x.winnerId !== BYE_SENTINEL);
     expect(withWinner.length).toBeGreaterThan(0);
   });
+
+  it('does not chain-advance a WR1 bye winner waiting in round 2 for the other feeder', () => {
+    const matches: Match[] = [
+      {
+        id: 'w1-0',
+        team1Id: 'jace',
+        team2Id: null,
+        round: 1,
+        bracketType: 'winners',
+        nextMatchId: 'w2-0',
+        winnerId: null
+      },
+      {
+        id: 'w1-1',
+        team1Id: 'jared',
+        team2Id: 'william',
+        round: 1,
+        bracketType: 'winners',
+        nextMatchId: 'w2-0',
+        winnerId: null
+      },
+      {
+        id: 'w2-0',
+        team1Id: null,
+        team2Id: null,
+        round: 2,
+        bracketType: 'winners',
+        nextMatchId: 'w3-0',
+        winnerId: null
+      },
+      {
+        id: 'w3-0',
+        team1Id: null,
+        team2Id: null,
+        round: 3,
+        bracketType: 'winners',
+        nextMatchId: null,
+        winnerId: null
+      }
+    ];
+    const out = autoAdvanceByes(matches.map(x => ({ ...x })));
+    const w20 = out.find(x => x.id === 'w2-0');
+    expect(w20?.team1Id).toBe('jace');
+    expect(w20?.team2Id).toBeNull();
+    expect(w20?.winnerId).toBeFalsy();
+    const w30 = out.find(x => x.id === 'w3-0');
+    expect(w30?.team1Id).toBeNull();
+    expect(w30?.winnerId).toBeFalsy();
+  });
 });
 
 describe('propagateWinnerToNext', () => {

@@ -52,16 +52,18 @@ export function propagateWinner(matches: Match[], currentMatch: Match): void {
   matches[nextMatchIdx] = nextMatch;
 }
 
-/** Winners / losers bracket match ids like w1-0, l2-1 — not pool (p-), casual (c-), grand finals (gf-). */
-function isEliminationBracketMatchId(id: string): boolean {
-  return /^[wl]\d/.test(id);
+/**
+ * Round-1 seed byes only: winners `w1-*` (ghost opponents) and casual `c-*` wave-1 walkovers.
+ * Does not touch losers bracket or WR2+ — a lone team there is waiting on the sibling feeder, not a bye.
+ */
+function isRoundOneByeAutoAdvanceMatch(m: Match): boolean {
+  if (m.round !== 1) return false;
+  return m.id.startsWith('w') || m.id.startsWith('c-');
 }
 
 /**
- * Auto-advance single-team byes in winners/losers bracket (any round).
- * Odd team counts create empty slots in later rounds; without this those teams never reach the final.
- * Skips grand finals — those must be played (or finished via normal scoring).
- * Double-empty: BYE_SENTINEL, no propagate.
+ * Auto-advance **round 1** seed byes (one team, empty opponent). Winner is placed in the next match once; no further chain.
+ * Casual `c-*` matches get a winner only (`propagateWinner` is a no-op for those ids).
  */
 export function autoAdvanceByes(matches: Match[]): Match[] {
   let updated = [...matches];
@@ -72,7 +74,7 @@ export function autoAdvanceByes(matches: Match[]): Match[] {
     for (let i = 0; i < updated.length; i++) {
       const m = updated[i];
       if (m.winnerId) continue;
-      if (!isEliminationBracketMatchId(m.id)) continue;
+      if (!isRoundOneByeAutoAdvanceMatch(m)) continue;
 
       if (m.team1Id && !m.team2Id) {
         updated[i] = { ...m, winnerId: m.team1Id, score1: 1, score2: 0 };
