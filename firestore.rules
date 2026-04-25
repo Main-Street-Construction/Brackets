@@ -1,38 +1,128 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ===============================================================
-    // Helper Functions
-    // ===============================================================
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    function isCreator(tournamentId) {
-      return isAuthenticated() && request.auth.uid == get(/databases/$(database)/documents/tournaments/$(tournamentId)).data.creatorId;
+    function tournamentDoc(tournamentId) {
+      return get(/databases/$(database)/documents/tournaments/$(tournamentId));
     }
 
-    // Director: create/update only when signed in as creator.
-    // Live results (/live/:id): public read — no sign-in required.
+    function tournamentExists(tournamentId) {
+      return exists(/databases/$(database)/documents/tournaments/$(tournamentId));
+    }
+
+    function isTournamentCreator(tournamentId) {
+      return isAuthenticated()
+        && tournamentExists(tournamentId)
+        && request.auth.uid == tournamentDoc(tournamentId).data.creatorId;
+    }
+
+    // Public live views can read started/finished tournaments.
+    function canReadTournament(tournamentId) {
+      return isTournamentCreator(tournamentId)
+        || (tournamentExists(tournamentId)
+          && (
+            tournamentDoc(tournamentId).data.isStarted == true
+            || tournamentDoc(tournamentId).data.isFinished == true
+          ));
+    }
+
+    function hasOnlyTournamentKeys(data) {
+      return data.keys().hasOnly([
+        'name',
+        'format',
+        'isStarted',
+        'isFinished',
+        'inviteCode',
+        'creatorId',
+        'numNets',
+        'queue',
+        'activeNets',
+        'rules',
+        'createdAt'
+      ]);
+    }
+
+    function validTournamentCreate() {
+      return hasOnlyTournamentKeys(request.resource.data)
+        && request.resource.data.creatorId == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.format is string
+        && request.resource.data.inviteCode is string
+        && request.resource.data.isStarted is bool
+        && request.resource.data.isFinished is bool
+        && request.resource.data.queue is list;
+    }
+
+    function validTournamentUpdate() {
+      return hasOnlyTournamentKeys(request.resource.data)
+        // creatorId is immutable after create.
+        && request.resource.data.creatorId == resource.data.creatorId;
+    }
+
+    function validTeamDoc(teamId) {
+      return request.resource.data.keys().hasOnly(['id', 'name', 'consecutiveWins', 'group'])
+        && request.resource.data.id == teamId
+        && request.resource.data.name is string
+        && (!('consecutiveWins' in request.resource.data) || request.resource.data.consecutiveWins is int)
+        && (!('group' in request.resource.data) || request.resource.data.group is string);
+    }
+
+    function validMatchDoc(matchId) {
+      return request.resource.data.keys().hasOnly([
+          'id',
+          'team1Id',
+          'team2Id',
+          'score1',
+          'score2',
+          'winnerId',
+          'nextMatchId',
+          'loserMatchId',
+          'round',
+          'bracketType',
+          'netIndex',
+          'poolGroup',
+          'sets'
+        ])
+        && request.resource.data.id == matchId
+        && request.resource.data.round is int
+        && (!('team1Id' in request.resource.data) || request.resource.data.team1Id is string)
+        && (!('team2Id' in request.resource.data) || request.resource.data.team2Id is string)
+        && (!('winnerId' in request.resource.data) || request.resource.data.winnerId is string)
+        && (!('score1' in request.resource.data) || request.resource.data.score1 is int)
+        && (!('score2' in request.resource.data) || request.resource.data.score2 is int)
+        && (!('nextMatchId' in request.resource.data) || request.resource.data.nextMatchId is string)
+        && (!('loserMatchId' in request.resource.data) || request.resource.data.loserMatchId is string)
+        && (!('bracketType' in request.resource.data) || request.resource.data.bracketType is string)
+        && (!('netIndex' in request.resource.data) || request.resource.data.netIndex is int)
+        && (!('poolGroup' in request.resource.data) || request.resource.data.poolGroup is string);
+    }
+
     match /tournaments/{tournamentId} {
-      allow read: if true;
+      allow read: if canReadTournament(tournamentId);
 
       allow create: if isAuthenticated()
-        && request.resource.data.creatorId == request.auth.uid;
+        && validTournamentCreate();
 
-      allow update, delete: if isAuthenticated()
-        && resource.data.creatorId == request.auth.uid;
+      allow update: if isTournamentCreator(tournamentId)
+        && validTournamentUpdate();
+
+      allow delete: if isTournamentCreator(tournamentId);
 
       match /teams/{teamId} {
-        allow read: if true;
-        allow create, update, delete: if isAuthenticated()
-          && get(/databases/$(database)/documents/tournaments/$(tournamentId)).data.creatorId == request.auth.uid;
+        allow read: if canReadTournament(tournamentId);
+        allow create, update: if isTournamentCreator(tournamentId)
+          && validTeamDoc(teamId);
+        allow delete: if isTournamentCreator(tournamentId);
       }
 
       match /matches/{matchId} {
-        allow read: if true;
-        allow create, update, delete: if isAuthenticated()
-          && get(/databases/$(database)/documents/tournaments/$(tournamentId)).data.creatorId == request.auth.uid;
+        allow read: if canReadTournament(tournamentId);
+        allow create, update: if isTournamentCreator(tournamentId)
+          && validMatchDoc(matchId);
+        allow delete: if isTournamentCreator(tournamentId);
       }
     }
   }
