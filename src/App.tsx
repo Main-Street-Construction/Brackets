@@ -55,9 +55,11 @@ import { readLocalStorageJson, normalizeActiveNets, clearPersistedTournamentProg
 import { DEFAULT_RULES, sanitizeRules } from './lib/tournament/rules';
 import { getChangedMatches, matchesSyncEqual, teamsSyncEqual } from './lib/matchSync';
 import {
-  pullTeamsFromWinnersQueue,
-  sanitizeWinnersQueue,
-  winnersListActiveTeamIds
+  advanceWinnersListAfterScore,
+  applyWinnersListJoinQueue,
+  buildWinnersListStartState,
+  getLiveMatchOnNet,
+  type WinnersListState
 } from './lib/tournament/winnersList';
 
 const DEFAULT_LOCAL_TEAMS: Team[] = [
@@ -154,8 +156,8 @@ export default function App() {
   const [banner, setBanner] = useState<BannerMessage>(null);
   const reconcileKeyRef = useRef<string | null>(null);
   const suppressCloudSyncRef = useRef(false);
-  /** Teams assigned to a net in-flight (before React/Firestore catches up). */
-  const winnersListLockedTeamsRef = useRef<Set<string>>(new Set());
+  /** Latest winners-list snapshot — updated synchronously so back-to-back scores see fresh state. */
+  const winnersListSyncRef = useRef<WinnersListState>({ matches: [], queue: [], activeNets: {} });
   const scoringMatchesRef = useRef<Set<string>>(new Set());
   const teamNameTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const syncRef = useRef({ isCreator, isStarted, isFinished, format, numNets });
@@ -171,28 +173,10 @@ export default function App() {
     setIsFinished(false);
   }, []);
 
-  const lockWinnersListTeams = useCallback((...ids: (string | null | undefined)[]) => {
-    for (const id of ids) {
-      if (id) winnersListLockedTeamsRef.current.add(id);
-    }
-  }, []);
-
-  const pullWinnersQueue = useCallback(
-    (queueIn: string[], matchesIn: Match[], count: number, reserved: Iterable<string> = []) =>
-      pullTeamsFromWinnersQueue(queueIn, matchesIn, count, [
-        ...reserved,
-        ...winnersListLockedTeamsRef.current
-      ]),
-    []
-  );
-
   useEffect(() => {
     if (format !== 'winners-list') return;
-    const active = winnersListActiveTeamIds(matches);
-    for (const id of winnersListLockedTeamsRef.current) {
-      if (active.has(id)) winnersListLockedTeamsRef.current.delete(id);
-    }
-  }, [format, matches]);
+    winnersListSyncRef.current = { matches, queue, activeNets };
+  }, [format, matches, queue, activeNets]);
 
   useEffect(() => {
     const timers = teamNameTimersRef.current;
@@ -612,31 +596,13 @@ export default function App() {
       initialMatches = autoAdvanceByes(initialMatches);
       initialMatches = assignRoundRobinNets(initialMatches, numNets);
     } else if (format === 'winners-list') {
-      let initialQueue = teams.map(t => t.id);
-      const initialActiveNets: { [key: number]: string | null } = {};
-      const workingMatches: Match[] = [];
-
-      for (let i = 0; i < numNets; i++) {
-        const { teamIds, remainingQueue } = pullTeamsFromWinnersQueue(initialQueue, workingMatches, 2);
-        initialQueue = remainingQueue;
-        if (teamIds.length >= 2) {
-          const matchId = `net-${i}-${Date.now()}`;
-          const match: Match = {
-            id: matchId,
-            team1Id: teamIds[0]!,
-            team2Id: teamIds[1]!,
-            round: 1,
-            netIndex: i
-          };
-          workingMatches.push(match);
-          initialActiveNets[i] = matchId;
-        } else {
-          initialActiveNets[i] = null;
-        }
-      }
-
-      initialMatches = workingMatches;
-      initialQueue = sanitizeWinnersQueue(initialQueue, workingMatches);
+      const startState = buildWinnersListStartState(
+        teams.map(t => t.id),
+        numNets
+      );
+      initialMatches = startState.matches;
+      const initialQueue = startState.queue;
+      const initialActiveNets = startState.activeNets;
 
       if (tournamentId && db) {
         for (const team of teams) {
@@ -669,6 +635,11 @@ export default function App() {
         setIsFinished(false);
         setTeams(teams.map(t => ({ ...t, consecutiveWins: 0 })));
       }
+      winnersListSyncRef.current = {
+        matches: initialMatches,
+        queue: initialQueue,
+        activeNets: initialActiveNets
+      };
       return;
     }
 
@@ -798,7 +769,7 @@ export default function App() {
     setInviteCode('');
     setCloudSyncing(false);
     reconcileKeyRef.current = null;
-    winnersListLockedTeamsRef.current.clear();
+    winnersListSyncRef.current = { matches: [], queue: [], activeNets: {} };
     clearPersistedTournamentProgress();
 
     if (!tid || !db) {
@@ -837,107 +808,33 @@ export default function App() {
     }
   };
 
-  const onJoinQueue = async (teamId: string, currentTeams?: Team[]) => {
+  const onJoinQueue = async (teamId: string, _currentTeams?: Team[]) => {
+    if (format !== 'winners-list') return;
     try {
-      let newQueue = [...queue, teamId];
-      const newActiveNets = { ...activeNets };
-      let updatedTeams = [...(currentTeams || teams)];
-      const matchesToAdd: Match[] = [];
+        const { state, newMatches, updatedMatches } = applyWinnersListJoinQueue(
+          winnersListSyncRef.current,
+          teamId,
+          numNets
+        );
+        winnersListSyncRef.current = state;
+        setMatches(state.matches);
+        setQueue(state.queue);
+        setActiveNets(state.activeNets);
 
-      if (format === 'winners-list') {
-        let workingMatches = [...matches];
-        for (const m of matchesToAdd) {
-          const idx = workingMatches.findIndex(existing => existing.id === m.id);
-          if (idx !== -1) workingMatches[idx] = m;
-          else workingMatches.push(m);
-        }
-
-        for (let i = 0; i < numNets; i++) {
-          const currentMatchId = newActiveNets[i];
-          const currentMatch = workingMatches.find(m => m.id === currentMatchId);
-
-          if (!currentMatchId || currentMatch?.winnerId) {
-            const { teamIds, remainingQueue } = pullWinnersQueue(newQueue, workingMatches, 2);
-            newQueue = remainingQueue;
-            if (teamIds.length >= 2) {
-              const matchId = `net-${i}-${Date.now()}`;
-              const newMatch: Match = {
-                id: matchId,
-                team1Id: teamIds[0]!,
-                team2Id: teamIds[1]!,
-                round: 1,
-                netIndex: i
-              };
-              newActiveNets[i] = matchId;
-              matchesToAdd.push(newMatch);
-              workingMatches.push(newMatch);
-              lockWinnersListTeams(teamIds[0], teamIds[1]);
-
-              updatedTeams = updatedTeams.map(t => {
-                if (t.id === teamIds[0] || t.id === teamIds[1]) return { ...t, consecutiveWins: 0 };
-                return t;
-              });
-            }
-          } else if (currentMatch && !currentMatch.winnerId && !currentMatch.team2Id) {
-            const { teamIds, remainingQueue } = pullWinnersQueue(newQueue, workingMatches, 1);
-            newQueue = remainingQueue;
-            if (teamIds.length >= 1) {
-              const t2Id = teamIds[0]!;
-              lockWinnersListTeams(t2Id);
-              const updatedMatch = { ...currentMatch, team2Id: t2Id };
-              const idx = matchesToAdd.findIndex(m => m.id === currentMatch.id);
-              if (idx !== -1) matchesToAdd[idx] = updatedMatch;
-              else matchesToAdd.push(updatedMatch);
-              const wIdx = workingMatches.findIndex(m => m.id === currentMatch.id);
-              if (wIdx !== -1) workingMatches[wIdx] = updatedMatch;
-
-              updatedTeams = updatedTeams.map(t => {
-                if (t.id === t2Id) return { ...t, consecutiveWins: 0 };
-                return t;
-              });
-            }
-          }
-        }
-
-        newQueue = sanitizeWinnersQueue(newQueue, workingMatches);
-      }
-
-      if (tournamentId && db) {
-        const updates: Record<string, unknown> = { queue: newQueue };
-        if (format === 'winners-list') {
-          for (const [net, matchId] of Object.entries(newActiveNets)) {
+        if (tournamentId && db) {
+          const updates: Record<string, unknown> = { queue: state.queue };
+          for (const [net, matchId] of Object.entries(state.activeNets)) {
             updates[`activeNets.${net}`] = matchId;
           }
-        }
-        await updateDoc(doc(db, 'tournaments', tournamentId), updates);
-        for (const match of matchesToAdd) {
-          await setDoc(
-            doc(db, 'tournaments', tournamentId, 'matches', match.id),
-            matchToFirestore(match)
-          );
-        }
-        for (const team of updatedTeams) {
-          if (matchesToAdd.some(m => m.team1Id === team.id || m.team2Id === team.id)) {
-            await updateDoc(doc(db, 'tournaments', tournamentId, 'teams', team.id), {
-              consecutiveWins: 0
-            });
+          await updateDoc(doc(db, 'tournaments', tournamentId), updates);
+          for (const match of [...newMatches, ...updatedMatches]) {
+            await setDoc(
+              doc(db, 'tournaments', tournamentId, 'matches', match.id),
+              matchToFirestore(match)
+            );
           }
         }
-      } else if (format === 'winners-list') {
-        setActiveNets(newActiveNets);
-        setMatches(prev => {
-          const updated = [...prev];
-          for (const m of matchesToAdd) {
-            const idx = updated.findIndex(existing => existing.id === m.id);
-            if (idx !== -1) updated[idx] = m;
-            else updated.push(m);
-          }
-          return updated;
-        });
-        setTeams(updatedTeams);
-      }
-
-      setQueue(newQueue);
+        return;
     } catch (err) {
       console.error('[onJoinQueue] failed:', err);
       setBanner({ type: 'error', message: formatFirebaseError(err) });
@@ -978,6 +875,8 @@ export default function App() {
     const matchIdx = updatedMatches.findIndex(m => m.id === matchId);
     if (matchIdx === -1) return;
 
+    if (updatedMatches[matchIdx].winnerId) return;
+
     const winnerId = outcome.winnerIsTeam1
       ? updatedMatches[matchIdx].team1Id
       : updatedMatches[matchIdx].team2Id;
@@ -1012,124 +911,64 @@ export default function App() {
       }
     }
 
-    if (format === 'winners-list' && winnerId && loserId) {
+    if (format === 'winners-list' && winnerId) {
+      const snap = winnersListSyncRef.current;
+      const liveBefore = snap.matches.find(m => m.id === matchId);
+      if (!liveBefore || liveBefore.winnerId) return;
+
       const netIndex = currentMatch.netIndex!;
       const winnerTeam = teams.find(t => t.id === winnerId);
+      const winnerConsecutiveWins = (winnerTeam?.consecutiveWins || 0) + 1;
 
-      updatedMatches[matchIdx] = currentMatch;
-      let newQueue = sanitizeWinnersQueue([...queue], updatedMatches);
-      let nextTeam1Id: string | null = null;
-      let nextTeam2Id: string | null = null;
+      const { state, teamUpdates } = advanceWinnersListAfterScore(
+        snap,
+        matchId,
+        currentMatch,
+        rules,
+        winnerConsecutiveWins,
+        numNets
+      );
 
-      const updatedWinnerWins = (winnerTeam?.consecutiveWins || 0) + 1;
-      let t1Wins = 0;
+      winnersListSyncRef.current = state;
+      setMatches(state.matches);
+      setQueue(state.queue);
+      setActiveNets(state.activeNets);
+      setTeams(prev =>
+        prev.map(t => {
+          const upd = teamUpdates.find(u => u.teamId === t.id);
+          return upd ? { ...t, consecutiveWins: upd.consecutiveWins } : t;
+        })
+      );
 
-      if (rules.winnerStays) {
-        nextTeam1Id = winnerId;
-        const pulled = pullWinnersQueue(newQueue, updatedMatches, 1, [winnerId]);
-        newQueue = pulled.remainingQueue;
-        nextTeam2Id = pulled.teamIds[0] ?? null;
-        t1Wins = updatedWinnerWins;
-      } else {
-        const pulled = pullWinnersQueue(newQueue, updatedMatches, 2);
-        newQueue = pulled.remainingQueue;
-        nextTeam1Id = pulled.teamIds[0] ?? null;
-        nextTeam2Id = pulled.teamIds[1] ?? null;
-      }
-
-      lockWinnersListTeams(nextTeam1Id, nextTeam2Id);
-
-      if (nextTeam1Id) {
-        const nextMatchId = `net-${netIndex}-${Date.now()}`;
-        const nextMatch: Match = {
-          id: nextMatchId,
-          team1Id: nextTeam1Id,
-          team2Id: nextTeam2Id,
-          round: (currentMatch.round || 1) + 1,
-          netIndex
-        };
-
-        const nextMatches = [...updatedMatches, nextMatch];
-        newQueue = sanitizeWinnersQueue(newQueue, nextMatches);
-        setMatches(nextMatches);
-        setQueue(newQueue);
-        setActiveNets({ ...activeNets, [netIndex]: nextMatchId });
-        setTeams(prev =>
-          prev.map(t => {
-            if (t.id === nextTeam1Id) return { ...t, consecutiveWins: t1Wins };
-            if (nextTeam2Id && t.id === nextTeam2Id) return { ...t, consecutiveWins: 0 };
-            if (t.id === loserId) return { ...t, consecutiveWins: 0 };
-            return t;
-          })
-        );
-
-        if (tournamentId && db) {
-          void (async () => {
-            try {
+      if (tournamentId && db) {
+        void (async () => {
+          try {
+            await setDoc(
+              doc(db, 'tournaments', tournamentId, 'matches', matchId),
+              matchToFirestore(currentMatch)
+            );
+            const nextLive = getLiveMatchOnNet(state.matches, netIndex);
+            if (nextLive && nextLive.id !== matchId) {
               await setDoc(
-                doc(db, 'tournaments', tournamentId, 'matches', matchId),
-                matchToFirestore(currentMatch)
+                doc(db, 'tournaments', tournamentId, 'matches', nextLive.id),
+                matchToFirestore(nextLive)
               );
-              await setDoc(
-                doc(db, 'tournaments', tournamentId, 'matches', nextMatchId),
-                matchToFirestore(nextMatch)
-              );
-              await updateDoc(doc(db, 'tournaments', tournamentId, 'teams', nextTeam1Id), {
-                consecutiveWins: t1Wins
-              });
-              if (nextTeam2Id) {
-                await updateDoc(doc(db, 'tournaments', tournamentId, 'teams', nextTeam2Id), {
-                  consecutiveWins: 0
-                });
-              }
-              await updateDoc(doc(db, 'tournaments', tournamentId, 'teams', loserId), {
-                consecutiveWins: 0
-              });
-              await updateDoc(doc(db, 'tournaments', tournamentId), {
-                queue: newQueue,
-                [`activeNets.${netIndex}`]: nextMatchId
-              });
-            } catch (err) {
-              console.error('[Firestore] winners-list score save failed:', err);
-              setBanner({ type: 'error', message: formatFirebaseError(err) });
             }
-          })();
-        }
-      } else {
-        setMatches(updatedMatches);
-        setQueue(newQueue);
-        setActiveNets({ ...activeNets, [netIndex]: null });
-        setTeams(prev =>
-          prev.map(t => {
-            if (t.id === winnerId) return { ...t, consecutiveWins: 0 };
-            if (t.id === loserId) return { ...t, consecutiveWins: 0 };
-            return t;
-          })
-        );
-
-        if (tournamentId && db) {
-          void (async () => {
-            try {
-              await setDoc(
-                doc(db, 'tournaments', tournamentId, 'matches', matchId),
-                matchToFirestore(currentMatch)
-              );
-              await updateDoc(doc(db, 'tournaments', tournamentId, 'teams', winnerId), {
-                consecutiveWins: 0
+            for (const upd of teamUpdates) {
+              await updateDoc(doc(db, 'tournaments', tournamentId, 'teams', upd.teamId), {
+                consecutiveWins: upd.consecutiveWins
               });
-              await updateDoc(doc(db, 'tournaments', tournamentId, 'teams', loserId), {
-                consecutiveWins: 0
-              });
-              await updateDoc(doc(db, 'tournaments', tournamentId), {
-                queue: newQueue,
-                [`activeNets.${netIndex}`]: null
-              });
-            } catch (err) {
-              console.error('[Firestore] winners-list score save failed:', err);
-              setBanner({ type: 'error', message: formatFirebaseError(err) });
             }
-          })();
-        }
+            const updates: Record<string, unknown> = { queue: state.queue };
+            for (const [net, mid] of Object.entries(state.activeNets)) {
+              updates[`activeNets.${net}`] = mid;
+            }
+            await updateDoc(doc(db, 'tournaments', tournamentId), updates);
+          } catch (err) {
+            console.error('[Firestore] winners-list score save failed:', err);
+            setBanner({ type: 'error', message: formatFirebaseError(err) });
+          }
+        })();
       }
       return;
     }
@@ -1218,12 +1057,8 @@ export default function App() {
     isCreator,
     isFinished,
     numNets,
-    queue,
-    activeNets,
     markTournamentFinished,
-    markTournamentOpen,
-    pullWinnersQueue,
-    lockWinnersListTeams
+    markTournamentOpen
   ]);
 
   const finishTournament = async () => {

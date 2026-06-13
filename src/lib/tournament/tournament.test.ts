@@ -25,10 +25,14 @@ import { matchOutcomeFromSets, isValidCompletedSet } from './scoring';
 import { resolveChampionTeamId, isTournamentDecided } from './champion';
 import { countBracketLosses, teamPowerStat, matchPowerMarginForTeam } from './records';
 import {
+  advanceWinnersListAfterScore,
+  getLiveMatchOnNet,
   pullTeamsFromWinnersQueue,
   sanitizeWinnersQueue,
-  winnersListActiveTeamIds
+  winnersListActiveTeamIds,
+  type WinnersListState
 } from './winnersList';
+import { DEFAULT_RULES } from './rules';
 import type { Match, Team, TournamentRules } from '../../types';
 
 const teams4 = (n: number): Team[] =>
@@ -880,6 +884,107 @@ describe('winnersList queue', () => {
     expect(pulled.teamIds).toEqual(['d']);
     const second = pullTeamsFromWinnersQueue(pulled.remainingQueue, [], 1, ['c', 'd']);
     expect(second.teamIds).toEqual(['e']);
+  });
+
+  it('advance after score rotates only the scored net and respects queue order', () => {
+    const state = {
+      matches: [live(0, 'a', 'b'), live(1, 'x', 'y')],
+      queue: ['c', 'd', 'e'],
+      activeNets: { 0: 'net-0', 1: 'net-1' }
+    };
+    const done: Match = {
+      id: 'net-0',
+      team1Id: 'a',
+      team2Id: 'b',
+      round: 1,
+      netIndex: 0,
+      winnerId: 'a',
+      score1: 2,
+      score2: 0
+    };
+    const { state: next } = advanceWinnersListAfterScore(state, 'net-0', done, DEFAULT_RULES, 1, 2);
+    expect(next.queue).toEqual(['d', 'e']);
+    const net0 = getLiveMatchOnNet(next.matches, 0);
+    expect(net0?.team1Id).toBe('a');
+    expect(net0?.team2Id).toBe('c');
+    expect(getLiveMatchOnNet(next.matches, 1)?.team1Id).toBe('x');
+  });
+
+  it('consecutive scores on one net use the updated queue', () => {
+    let state: WinnersListState = {
+      matches: [live(0, 'a', 'b')],
+      queue: ['c', 'd'],
+      activeNets: { 0: 'net-0', 1: null }
+    };
+    const done1: Match = {
+      id: 'net-0',
+      team1Id: 'a',
+      team2Id: 'b',
+      round: 1,
+      netIndex: 0,
+      winnerId: 'a',
+      score1: 2,
+      score2: 0
+    };
+    let result = advanceWinnersListAfterScore(state, 'net-0', done1, DEFAULT_RULES, 1, 2);
+    state = result.state;
+    const live1 = getLiveMatchOnNet(state.matches, 0)!;
+    const done2: Match = {
+      ...live1,
+      winnerId: 'a',
+      score1: 2,
+      score2: 0
+    };
+    result = advanceWinnersListAfterScore(state, live1.id, done2, DEFAULT_RULES, 2, 2);
+    expect(result.state.queue).toEqual([]);
+    const live2 = getLiveMatchOnNet(result.state.matches, 0);
+    expect(live2?.team1Id).toBe('a');
+    expect(live2?.team2Id).toBe('d');
+  });
+
+  it('both teams off with empty queue leaves net idle', () => {
+    const state = {
+      matches: [live(0, 'a', 'b')],
+      queue: [],
+      activeNets: { 0: 'net-0' }
+    };
+    const done: Match = {
+      id: 'net-0',
+      team1Id: 'a',
+      team2Id: 'b',
+      round: 1,
+      netIndex: 0,
+      winnerId: 'a',
+      score1: 2,
+      score2: 0
+    };
+    const rules = { ...DEFAULT_RULES, winnerStays: false };
+    const { state: next } = advanceWinnersListAfterScore(state, 'net-0', done, rules, 0, 2);
+    expect(getLiveMatchOnNet(next.matches, 0)).toBeUndefined();
+    expect(next.activeNets[0]).toBeNull();
+  });
+
+  it('winner stays with empty queue leaves solo wait, no phantom opponent', () => {
+    const state = {
+      matches: [live(0, 'a', 'b')],
+      queue: [],
+      activeNets: { 0: 'net-0' }
+    };
+    const done: Match = {
+      id: 'net-0',
+      team1Id: 'a',
+      team2Id: 'b',
+      round: 1,
+      netIndex: 0,
+      winnerId: 'a',
+      score1: 2,
+      score2: 0
+    };
+    const { state: next } = advanceWinnersListAfterScore(state, 'net-0', done, DEFAULT_RULES, 1, 2);
+    const onNet = getLiveMatchOnNet(next.matches, 0);
+    expect(onNet?.team1Id).toBe('a');
+    expect(onNet?.team2Id).toBeNull();
+    expect(next.queue).toEqual([]);
   });
 });
 
