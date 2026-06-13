@@ -132,25 +132,25 @@ export const MatchCard: React.FC<MatchCardProps> = ({
     <div className="match-card w-full">
       {showNetBadge && matchIsOnNet(match) && !match.winnerId && (
         <div className="mb-2 flex justify-end">
-          <div className="w95-inset px-2 py-0.5 text-[10px] font-semibold text-zinc-800">
+          <div className="w95-inset px-2 py-0.5 text-[10px] font-semibold text-ink-secondary">
             NET {match.netIndex + 1}
           </div>
         </div>
       )}
 
       {match.winnerId && (winnerTeam || match.byeWalkover) && (
-        <div className="mb-3 rounded-lg border-2 border-emerald-600 bg-emerald-100 px-3 py-2 text-center shadow-sm">
+        <div className="mb-3 rounded-lg border border-win/30 bg-win/10 px-3 py-2 text-center">
           {match.byeWalkover ? (
             <>
-              <p className="text-[10px] font-extrabold uppercase tracking-wide text-emerald-900">Advanced</p>
-              <p className="mt-0.5 text-base font-bold text-emerald-950">
+              <p className="text-[10px] font-extrabold uppercase tracking-wide text-win">Advanced</p>
+              <p className="mt-0.5 text-base font-bold text-ink">
                 {teams.find(t => t.id === match.winnerId)?.name ?? 'Team'}
               </p>
             </>
           ) : (
             <>
-              <p className="text-[10px] font-extrabold uppercase tracking-wide text-emerald-900">Match winner</p>
-              <p className="mt-0.5 text-base font-bold text-emerald-950">{winnerTeam!.name}</p>
+              <p className="text-[10px] font-extrabold uppercase tracking-wide text-win">Match winner</p>
+              <p className="mt-0.5 text-base font-bold text-ink">{winnerTeam!.name}</p>
             </>
           )}
         </div>
@@ -158,7 +158,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
 
       {showServeRuleCallout && (
         <p
-          className="mb-2 rounded border border-amber-300/70 bg-amber-50/90 px-2 py-1.5 text-center text-[10px] font-medium leading-snug text-amber-950/95"
+          className="mb-2 rounded border border-tie/30 bg-tie/10 px-2 py-1.5 text-center text-[10px] font-medium leading-snug text-ink-secondary"
           role="status"
         >
           Serve to win: last point of the game on serve — enter final scores when done.
@@ -168,27 +168,27 @@ export const MatchCard: React.FC<MatchCardProps> = ({
       {bestOf === 3 && completedSets.length > 0 && !match.winnerId && (
         <div className="mb-2 flex flex-wrap gap-1.5">
           {completedSets.map((s, i) => (
-            <span key={i} className="w95-inset px-2 py-1 text-[10px] font-bold text-black">
+            <span key={i} className="w95-inset px-2 py-1 text-[10px] font-bold text-ink">
               S{i + 1}: {s.team1}-{s.team2}
             </span>
           ))}
-          <span className="self-center text-[10px] font-bold text-black">
+          <span className="self-center text-[10px] font-bold text-ink-secondary">
             ({w1}-{w2} sets)
           </span>
         </div>
       )}
 
       <div className="space-y-2">
-        <div className="px-1 text-[10px] font-bold uppercase tracking-wide text-black">{setLabel}</div>
+        <div className="px-1 text-[10px] font-bold uppercase tracking-wide text-ink-muted">{setLabel}</div>
 
         <div
           className={cn(
-            'flex min-h-[52px] items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50/80 p-2',
-            match.winnerId === team1?.id && team1 ? 'w95-row-winner' : 'bg-white'
+            'flex min-h-[52px] items-center justify-between rounded-lg border border-white/8 bg-surface p-2',
+            match.winnerId === team1?.id && team1 ? 'w95-row-winner' : ''
           )}
         >
-          <span className="flex-1 truncate pr-2 text-sm font-bold">
-            {team1?.name || <span className="font-normal italic text-black/50">TBD</span>}
+          <span className="flex-1 truncate pr-2 text-sm font-bold text-ink">
+            {team1?.name || <span className="font-normal italic text-ink-muted">TBD</span>}
           </span>
           <input
             type="number"
@@ -201,12 +201,12 @@ export const MatchCard: React.FC<MatchCardProps> = ({
         </div>
         <div
           className={cn(
-            'flex min-h-[52px] items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50/80 p-2',
-            match.winnerId === team2?.id && team2 ? 'w95-row-winner' : 'bg-white'
+            'flex min-h-[52px] items-center justify-between rounded-lg border border-white/8 bg-surface p-2',
+            match.winnerId === team2?.id && team2 ? 'w95-row-winner' : ''
           )}
         >
-          <span className="flex-1 truncate pr-2 text-sm font-bold">
-            {team2?.name || <span className="font-normal italic text-black/50">TBD</span>}
+          <span className="flex-1 truncate pr-2 text-sm font-bold text-ink">
+            {team2?.name || <span className="font-normal italic text-ink-muted">TBD</span>}
           </span>
           <input
             type="number"
@@ -219,14 +219,14 @@ export const MatchCard: React.FC<MatchCardProps> = ({
         </div>
 
         {draftError && (
-          <div className="flex items-center gap-2 border-2 border-red-700 bg-white p-2 text-[10px] font-bold text-black">
+          <div className="flex items-center gap-2 rounded-lg border border-live/30 bg-live/10 p-2 text-[10px] font-bold text-live">
             <AlertCircle className="h-3 w-3 shrink-0" />
             {draftError}
           </div>
         )}
 
         {r.winByTwo && !match.winnerId && team1 && team2 && (
-          <div className="pt-1 text-center text-[9px] font-semibold uppercase tracking-wider text-zinc-600">
+          <div className="pt-1 text-center text-[9px] font-semibold uppercase tracking-wider text-ink-muted">
             Win by 2 per set
           </div>
         )}

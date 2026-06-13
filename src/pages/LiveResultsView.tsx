@@ -6,6 +6,7 @@ import type { Match, Team, TournamentFormat, TournamentRules } from '../types';
 import { cn } from '../lib/utils';
 import { Radio, LayoutGrid, Trophy, Users, Clock, Home } from 'lucide-react';
 import { BracketReferenceStrip } from '../components/EliminationCourtView';
+import { LiveFeed } from '../components/LiveFeed';
 import { matchIsOnNet, matchIsWaitingForCourt, isAutoAdvancePlaceholder } from '../lib/matchSchedule';
 import { resolveDisplayChampion } from '../lib/tournament/champion';
 import { matchCountsTowardEliminationRecord } from '../lib/tournament/records';
@@ -166,10 +167,10 @@ export function LiveResultsView() {
 
   if (!isFirebaseConfigured || !db) {
     return (
-      <div className="min-h-screen bg-zinc-100 p-6 text-center text-sm text-zinc-700">
-        Live results need Firebase in <code className="rounded bg-white px-1">.env</code>.
+      <div className="min-h-screen bg-canvas p-6 text-center text-sm text-ink-secondary">
+        Live results need Firebase in <code className="rounded bg-surface-raised px-1">.env</code>.
         <div className="mt-4">
-          <Link to="/" className="text-sky-700 underline">
+          <Link to="/" className="text-accent underline">
             Director setup
           </Link>
         </div>
@@ -179,9 +180,9 @@ export function LiveResultsView() {
 
   if (!tournamentId || missing) {
     return (
-      <div className="min-h-screen bg-zinc-100 p-8 text-center">
-        <p className="text-lg font-bold text-zinc-800">Tournament not found</p>
-        <Link to="/" className="mt-4 inline-block text-sky-700 underline">
+      <div className="min-h-screen bg-canvas p-8 text-center">
+        <p className="text-lg font-bold text-ink">Tournament not found</p>
+        <Link to="/" className="mt-4 inline-block text-accent underline">
           <Home className="mb-1 inline h-4 w-4" /> Back home
         </Link>
       </div>
@@ -189,24 +190,24 @@ export function LiveResultsView() {
   }
 
   return (
-    <div className="min-h-screen bg-[#c0c0c0] text-black">
-      <header className="border-b-4 border-t-4 border-white border-b-[#404040] bg-[#000080] px-4 py-3 text-white shadow-md">
+    <div className="min-h-screen bg-canvas text-ink">
+      <header className="glass-panel border-b border-white/8 px-4 py-3">
         <div className="mx-auto flex max-w-5xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-white/80">Live results</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-ink-muted">Live results</p>
             <h1 className="text-xl font-bold leading-tight">{name}</h1>
-            <p className="text-xs text-white/90">{FORMAT_LABEL[format]}</p>
+            <p className="text-xs text-ink-secondary">{FORMAT_LABEL[format]}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
             <span
               className={cn(
-                'rounded border px-2 py-1',
-                isFinished ? 'border-emerald-300 bg-emerald-100 text-emerald-950' : 'border-white/40 bg-white/10'
+                'rounded-full border px-2 py-1',
+                isFinished ? 'border-win/30 bg-win/10 text-win' : 'border-white/10 bg-white/5 text-ink-secondary'
               )}
             >
               {isFinished ? 'Finished' : isStarted ? 'In progress' : 'Not started'}
             </span>
-            <span className="rounded border border-white/40 bg-white/10 px-2 py-1">
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-ink-secondary">
               First to {rules.pointsToWin}
               {rules.bestOf === 3 ? ' · Bo3' : ''}
             </span>
@@ -215,24 +216,26 @@ export function LiveResultsView() {
       </header>
 
       <main className="mx-auto max-w-5xl space-y-6 p-4 pb-12">
+        {isStarted && <LiveFeed matches={matches} teams={teams} />}
+
         {isFinished && (
           <section
-            className="w95-panel border-4 border-[#000080] bg-gradient-to-b from-[#ffffcc] to-white p-5 text-center shadow-md"
+            className="w95-panel border border-win/30 bg-win/10 p-5 text-center"
             aria-live="polite"
           >
-            <div className="mb-2 flex items-center justify-center gap-2 text-[#000080]">
+            <div className="mb-2 flex items-center justify-center gap-2 text-win">
               <Trophy className="h-8 w-8 shrink-0" aria-hidden />
               <span className="text-xs font-extrabold uppercase tracking-widest">Tournament champion</span>
             </div>
             {format === 'casual' ? (
-              <p className="text-lg font-bold text-black">Session complete</p>
+              <p className="text-lg font-bold text-ink">Session complete</p>
             ) : displayChampion ? (
-              <p className="text-2xl font-extrabold tracking-tight text-black sm:text-3xl">{displayChampion.name}</p>
+              <p className="text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">{displayChampion.name}</p>
             ) : (
-              <p className="text-lg font-bold text-zinc-700">Complete — see bracket for final placement</p>
+              <p className="text-lg font-bold text-ink-secondary">Complete — see bracket for final placement</p>
             )}
             {displayChampion && format !== 'casual' && (
-              <p className="mt-2 text-xs font-semibold text-zinc-600">
+              <p className="mt-2 text-xs font-semibold text-ink-muted">
                 {FORMAT_LABEL[format]}
                 {rules.bestOf === 3 ? ' · Best of 3 sets' : ' · Single set'}
               </p>
@@ -246,13 +249,13 @@ export function LiveResultsView() {
               <Users className="h-4 w-4" />
               Open play queue
             </div>
-            <p className="text-xs font-bold text-black">
-              Waiting for a net: <span className="text-[#000080]">{queue.length}</span> team
+            <p className="text-xs font-bold text-ink-secondary">
+              Waiting for a net: <span className="text-accent">{queue.length}</span> team
               {queue.length === 1 ? '' : 's'}
             </p>
             <div className="flex flex-wrap gap-2">
               {queue.slice(0, 24).map(id => (
-                <span key={id} className="rounded border border-zinc-400 bg-white px-2 py-1 text-xs font-bold">
+                <span key={id} className="rounded-lg border border-white/10 bg-surface-raised px-2 py-1 text-xs font-bold text-ink">
                   {teamName(id)}
                 </span>
               ))}
@@ -265,25 +268,25 @@ export function LiveResultsView() {
             <Clock className="h-4 w-4" />
             Who’s up next
           </div>
-          <p className="text-xs font-semibold text-zinc-700">
+          <p className="text-xs font-semibold text-ink-secondary">
             Next matches waiting for a court — be ready when your team appears.
           </p>
           {format === 'winners-list' && winnersQueuePairs.length > 0 && (
             <div className="mb-4 space-y-2">
-              <p className="text-[10px] font-bold uppercase text-zinc-600">From waiting list (order)</p>
+              <p className="text-[10px] font-bold uppercase text-ink-muted">From waiting list (order)</p>
               <ol className="space-y-2">
                 {winnersQueuePairs.slice(0, 15).map((p, i) => (
                   <li
                     key={`${p.a}-${p.b}-${i}`}
-                    className="flex flex-wrap items-center justify-between gap-2 border-2 border-dashed border-[#808080] bg-white px-3 py-2 text-sm font-bold"
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-white/15 bg-surface-raised px-3 py-2 text-sm font-bold text-ink"
                   >
-                    <span className="text-[10px] font-extrabold text-[#000080]">#{i + 1}</span>
+                    <span className="text-[10px] font-extrabold text-accent">#{i + 1}</span>
                     <span className="min-w-0 flex-1 text-center">
                       {teamName(p.a)}
-                      <span className="mx-2 text-zinc-400">vs</span>
+                      <span className="mx-2 text-ink-muted">vs</span>
                       {teamName(p.b)}
                     </span>
-                    <span className="text-[10px] text-zinc-500">Next wave</span>
+                    <span className="text-[10px] text-ink-muted">Next wave</span>
                   </li>
                 ))}
               </ol>
@@ -291,22 +294,22 @@ export function LiveResultsView() {
           )}
 
           {queuedMatches.length === 0 && !(format === 'winners-list' && winnersQueuePairs.length > 0) ? (
-            <p className="text-sm font-bold text-zinc-500">No matches waiting (or all courts are full).</p>
+            <p className="text-sm font-bold text-ink-muted">No matches waiting (or all courts are full).</p>
           ) : (
             queuedMatches.length > 0 && (
             <ol className="space-y-2">
               {queuedMatches.slice(0, 20).map((m, i) => (
                 <li
                   key={m.id}
-                  className="flex flex-wrap items-center justify-between gap-2 border-2 border-dashed border-[#808080] bg-white px-3 py-2 text-sm font-bold"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-white/15 bg-surface-raised px-3 py-2 text-sm font-bold text-ink"
                 >
-                  <span className="text-[10px] font-extrabold text-[#000080]">#{i + 1}</span>
+                  <span className="text-[10px] font-extrabold text-accent">#{i + 1}</span>
                   <span className="min-w-0 flex-1 text-center">
                     {elimOpponentLabel(m, 1)}
-                    <span className="mx-2 text-zinc-400">vs</span>
+                    <span className="mx-2 text-ink-muted">vs</span>
                     {elimOpponentLabel(m, 2)}
                   </span>
-                  <span className="text-[10px] text-zinc-500">
+                  <span className="text-[10px] text-ink-muted">
                     {m.poolGroup ? `Group ${m.poolGroup}` : ''}
                     {m.poolGroup && m.round > 0 ? ' · ' : ''}
                     {format === 'casual' ? `Round ${m.round}` : ''}
@@ -327,29 +330,29 @@ export function LiveResultsView() {
             {Array.from({ length: numNets }).map((_, i) => {
               const m = onCourtByNet[i];
               return (
-                <div key={i} className="border-2 border-[#808080] bg-white p-3 shadow-sm">
-                  <div className="mb-2 text-[10px] font-extrabold uppercase text-[#000080]">Net {i + 1}</div>
+                <div key={i} className="rounded-card border border-white/8 bg-surface-raised p-3">
+                  <div className="mb-2 text-[10px] font-extrabold uppercase text-accent">Net {i + 1}</div>
                   {m ? (
-                    <div className="space-y-1 text-sm font-bold">
-                      <div className={cn(m.winnerId === m.team1Id && 'text-emerald-800')}>
+                    <div className="space-y-1 text-sm font-bold text-ink">
+                      <div className={cn(m.winnerId === m.team1Id && 'text-win')}>
                         {elimOpponentLabel(m, 1)}
                       </div>
-                      <div className={cn(m.winnerId === m.team2Id && 'text-emerald-800')}>
+                      <div className={cn(m.winnerId === m.team2Id && 'text-win')}>
                         {elimOpponentLabel(m, 2)}
                       </div>
                       {m.sets && m.sets.length > 0 && (
-                        <div className="pt-1 font-mono text-xs text-zinc-600">
+                        <div className="pt-1 font-mono text-xs text-ink-muted">
                           {m.sets.map(s => `${s.team1}-${s.team2}`).join(' · ')}
                         </div>
                       )}
                       {m.winnerId && (
-                        <div className="border-t border-emerald-200 pt-1 text-[10px] font-extrabold uppercase text-emerald-800">
+                        <div className="border-t border-win/20 pt-1 text-[10px] font-extrabold uppercase text-win">
                           Winner: {teamName(m.winnerId)}
                         </div>
                       )}
                     </div>
                   ) : (
-                    <p className="text-xs font-semibold text-zinc-400">Open</p>
+                    <p className="text-xs font-semibold text-ink-muted">Open</p>
                   )}
                 </div>
               );
@@ -375,7 +378,7 @@ export function LiveResultsView() {
             </div>
             <table className="w-full min-w-[320px] border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b-2 border-[#808080]">
+                <tr className="border-b border-white/8">
                   {teams.some(t => Boolean(t.group)) && (
                     <th className="w95-inset px-3 py-2 text-[10px] font-bold uppercase">Grp</th>
                   )}
@@ -386,13 +389,13 @@ export function LiveResultsView() {
               </thead>
               <tbody>
                 {poolStandings.map(row => (
-                  <tr key={row.team.id} className="border-t border-zinc-200">
+                  <tr key={row.team.id} className="border-t border-white/8">
                     {teams.some(t => Boolean(t.group)) && (
-                      <td className="bg-white px-3 py-2 text-xs font-bold">{row.group || '—'}</td>
+                      <td className="bg-surface-raised px-3 py-2 text-xs font-bold">{row.group || '—'}</td>
                     )}
-                    <td className="bg-white px-3 py-2 font-bold">{row.team.name}</td>
-                    <td className="bg-white px-3 py-2 text-center">{row.wins}</td>
-                    <td className="bg-white px-3 py-2 text-center">{row.losses}</td>
+                    <td className="bg-surface-raised px-3 py-2 font-bold">{row.team.name}</td>
+                    <td className="bg-surface-raised px-3 py-2 text-center">{row.wins}</td>
+                    <td className="bg-surface-raised px-3 py-2 text-center">{row.losses}</td>
                   </tr>
                 ))}
               </tbody>
@@ -407,31 +410,31 @@ export function LiveResultsView() {
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             {recentDone.map(m => (
-              <div key={m.id} className="border border-zinc-300 bg-white px-3 py-2 text-xs">
+              <div key={m.id} className="rounded-lg border border-white/8 bg-surface-raised px-3 py-2 text-xs text-ink">
                 <div className="font-bold">
-                  <span className={m.winnerId === m.team1Id ? 'text-emerald-800' : ''}>
+                  <span className={m.winnerId === m.team1Id ? 'text-win' : ''}>
                     {elimOpponentLabel(m, 1)}
                   </span>
-                  <span className="mx-1 text-zinc-400">vs</span>
-                  <span className={m.winnerId === m.team2Id ? 'text-emerald-800' : ''}>
+                  <span className="mx-1 text-ink-muted">vs</span>
+                  <span className={m.winnerId === m.team2Id ? 'text-win' : ''}>
                     {elimOpponentLabel(m, 2)}
                   </span>
                 </div>
                 {m.sets && m.sets.length > 0 && (
-                  <div className="mt-1 font-mono text-[10px] text-zinc-600">
+                  <div className="mt-1 font-mono text-[10px] text-ink-muted">
                     {m.sets.map(s => `${s.team1}-${s.team2}`).join(', ')}
                   </div>
                 )}
-                <div className="mt-1 font-extrabold text-emerald-800">W: {teamName(m.winnerId)}</div>
+                <div className="mt-1 font-extrabold text-win">W: {teamName(m.winnerId)}</div>
               </div>
             ))}
           </div>
           {recentDone.length === 0 && (
-            <p className="text-xs font-semibold text-zinc-500">No finished matches yet.</p>
+            <p className="text-xs font-semibold text-ink-muted">No finished matches yet.</p>
           )}
         </section>
 
-        <p className="text-center text-[10px] text-zinc-600">
+        <p className="text-center text-[10px] text-ink-muted">
           Read-only feed · Scores come from the director’s console
         </p>
       </main>

@@ -47,7 +47,7 @@ export function BracketReferenceStrip({
 
   return (
     <div className="mt-2">
-      <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase text-zinc-600">
+      <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase text-ink-muted">
         <GitMerge className="h-3.5 w-3.5" />
         {label}
       </div>
@@ -55,9 +55,9 @@ export function BracketReferenceStrip({
         {rounds.map(({ round, list }) => (
           <div
             key={round}
-            className="flex min-w-[min(100%,220px)] snap-start flex-col gap-2 border-r border-zinc-200 pr-4"
+            className="flex min-w-[min(100%,220px)] snap-start flex-col gap-2 border-r border-white/8 pr-4"
           >
-            <div className="sticky left-0 w95-inset px-2 py-1 text-[9px] font-bold uppercase text-black">
+            <div className="sticky left-0 w95-inset px-2 py-1 text-[9px] font-bold uppercase text-ink-muted">
               R{round}
             </div>
             <div className="flex flex-col gap-2">
@@ -70,36 +70,36 @@ export function BracketReferenceStrip({
                   <div
                     key={m.id}
                     className={cn(
-                      'max-w-[200px] rounded-md border border-zinc-300 bg-white/90 px-2 py-1.5 text-[10px] shadow-sm',
-                      w && 'border-emerald-400/80 bg-emerald-50/90'
+                      'max-w-[200px] rounded-md border border-white/10 bg-surface-raised px-2 py-1.5 text-[10px]',
+                      w && 'border-win/30 bg-win/10'
                     )}
                   >
-                    <div className="font-mono text-[8px] text-zinc-400">{m.id}</div>
+                    <div className="font-mono text-[8px] text-ink-muted">{m.id}</div>
                     <div
                       className={cn(
-                        'truncate font-semibold',
-                        t1w && 'text-emerald-900',
-                        !m.team1Id && !t1w && 'italic text-zinc-400'
+                        'truncate font-semibold text-ink-secondary',
+                        t1w && 'text-win',
+                        !m.team1Id && !t1w && 'italic text-ink-muted'
                       )}
                     >
                       {name(m.team1Id)}
                     </div>
                     <div
                       className={cn(
-                        'truncate font-semibold',
-                        t2w && 'text-emerald-900',
-                        !m.team2Id && !t2w && 'italic text-zinc-400'
+                        'truncate font-semibold text-ink-secondary',
+                        t2w && 'text-win',
+                        !m.team2Id && !t2w && 'italic text-ink-muted'
                       )}
                     >
                       {name(m.team2Id)}
                     </div>
                     {sl && (
-                      <div className="mt-0.5 font-mono text-[8px] font-semibold text-zinc-600">
+                      <div className="mt-0.5 font-mono text-[8px] font-semibold text-ink-muted">
                         {sl}
                       </div>
                     )}
                     {w && (
-                      <div className="mt-1 border-t border-emerald-200 pt-1 text-[9px] font-extrabold uppercase text-emerald-800">
+                      <div className="mt-1 border-t border-win/20 pt-1 text-[9px] font-extrabold uppercase text-win">
                         W: {name(w)}
                       </div>
                     )}

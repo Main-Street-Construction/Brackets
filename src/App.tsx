@@ -44,6 +44,10 @@ import { consumeAuthRedirectError } from './authBootstrap';
 import { signInWithGoogle } from './lib/googleSignIn';
 
 import { WinnersListView } from './components/WinnersListView';
+import { LiveFeed } from './components/LiveFeed';
+import { StatusBanner, type BannerMessage } from './components/StatusBanner';
+import { validateBracketSeed } from './lib/validateBracket';
+import { formatFirebaseError } from './lib/firebaseErrors';
 
 const DEFAULT_RULES: TournamentRules = {
   pointsToWin: 25,
@@ -143,6 +147,7 @@ export default function App() {
     const saved = localStorage.getItem('tournament_rules');
     return saved ? sanitizeRules(JSON.parse(saved)) : DEFAULT_RULES;
   });
+  const [banner, setBanner] = useState<BannerMessage>(null);
 
   // Persistence for local mode and tournamentId
   useEffect(() => {
@@ -179,7 +184,7 @@ export default function App() {
 
   useEffect(() => {
     const msg = consumeAuthRedirectError();
-    if (msg) window.alert(msg);
+    if (msg) setBanner({ type: 'error', message: msg });
   }, []);
 
   useEffect(() => {
@@ -192,14 +197,16 @@ export default function App() {
 
   const login = async () => {
     if (!auth) {
-      window.alert(
-        'Cloud sign-in is not set up. Copy .env.example to .env and add your Firebase web app keys, then restart the dev server.'
-      );
+      setBanner({
+        type: 'info',
+        message:
+          'Cloud sign-in is not set up. Copy .env.example to .env and add your Firebase web app keys, then restart the dev server.'
+      });
       return;
     }
     const r = await signInWithGoogle(auth);
     if (r.ok === false && r.message) {
-      window.alert(r.message);
+      setBanner({ type: 'error', message: r.message });
     }
   };
 
@@ -229,6 +236,9 @@ export default function App() {
         setQueue(data.queue || []);
         setActiveNets(data.activeNets || {});
       }
+    }, err => {
+      console.error('[Firestore] tournament subscription failed:', err);
+      setBanner({ type: 'error', message: formatFirebaseError(err) });
     });
 
     const unsubTeams = onSnapshot(
@@ -240,7 +250,10 @@ export default function App() {
         });
         setTeams(teamsData.length > 0 ? teamsData : teams);
       },
-      err => console.error('[Firestore] teams subscription failed:', err)
+      err => {
+        console.error('[Firestore] teams subscription failed:', err);
+        setBanner({ type: 'error', message: formatFirebaseError(err) });
+      }
     );
 
     const unsubMatches = onSnapshot(
@@ -252,7 +265,10 @@ export default function App() {
         });
         setMatches(matchesData);
       },
-      err => console.error('[Firestore] matches subscription failed:', err)
+      err => {
+        console.error('[Firestore] matches subscription failed:', err);
+        setBanner({ type: 'error', message: formatFirebaseError(err) });
+      }
     );
 
     return () => {
@@ -264,7 +280,12 @@ export default function App() {
 
   const createTournament = async () => {
     if (!user || !db) {
-      window.alert(user ? 'Cloud sync is not configured. Add VITE_FIREBASE_* to .env and restart.' : 'Sign in with Google to create a cloud tournament.');
+      setBanner({
+        type: 'error',
+        message: user
+          ? 'Cloud sync is not configured. Add VITE_FIREBASE_* to .env and restart.'
+          : 'Sign in with Google to create a cloud tournament.'
+      });
       return;
     }
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -297,13 +318,13 @@ export default function App() {
 
   const joinTournament = async () => {
     if (!db) {
-      window.alert('Cloud sync is not configured.');
+      setBanner({ type: 'error', message: 'Cloud sync is not configured.' });
       return;
     }
     const q = query(collection(db, 'tournaments'), where('inviteCode', '==', joinCode.toUpperCase()));
     const snapshot = await getDocs(q);
     if (snapshot.empty) {
-      alert('Invalid invite code');
+      setBanner({ type: 'error', message: 'Invalid invite code.' });
       return;
     }
     const d = snapshot.docs[0]!;
@@ -375,16 +396,17 @@ export default function App() {
   };
 
   const startTournament = async () => {
-    if (teams.length < 2 && format !== 'winners-list') {
-      window.alert('Add at least 2 teams before starting.');
-      return;
-    }
-    if (tournamentId && db && !isCreator) {
-      window.alert('Only the tournament creator can start the bracket.');
-      return;
-    }
+    try {
+      if (teams.length < 2 && format !== 'winners-list') {
+        setBanner({ type: 'error', message: 'Add at least 2 teams before starting.' });
+        return;
+      }
+      if (tournamentId && db && !isCreator) {
+        setBanner({ type: 'error', message: 'Only the tournament creator can start the bracket.' });
+        return;
+      }
 
-    let initialMatches: Match[] = [];
+      let initialMatches: Match[] = [];
 
     if (format === 'single') {
       initialMatches = generateSingleElimination(teams);
@@ -488,6 +510,8 @@ export default function App() {
       return;
     }
 
+    validateBracketSeed(initialMatches, teams, format);
+
     if (tournamentId && db) {
       await updateDoc(doc(db, 'tournaments', tournamentId), { isStarted: true, isFinished: false });
       for (const match of initialMatches) {
@@ -500,6 +524,10 @@ export default function App() {
       setMatches(initialMatches);
       setIsStarted(true);
       setIsFinished(false);
+    }
+    } catch (err) {
+      console.error('[startTournament] failed:', err);
+      setBanner({ type: 'error', message: formatFirebaseError(err) });
     }
   };
 
@@ -696,7 +724,7 @@ export default function App() {
     if (!outcome.ok) return;
 
     if (tournamentId && db && !isCreator) {
-      window.alert('Only the tournament creator can enter scores.');
+      setBanner({ type: 'error', message: 'Only the tournament creator can enter scores.' });
       return;
     }
 
@@ -885,11 +913,7 @@ export default function App() {
         }
       } catch (err) {
         console.error('[Firestore] score save failed:', err);
-        window.alert(
-          err instanceof Error
-            ? `Could not save score: ${err.message}`
-            : 'Could not save score. Check that you are signed in as the tournament creator.'
-        );
+        setBanner({ type: 'error', message: formatFirebaseError(err) });
       }
     } else {
       setMatches(matchesWithNets);
@@ -964,7 +988,7 @@ export default function App() {
   );
 
   return (
-    <div className="flex min-h-dvh flex-col bg-zinc-100 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-3">
+    <div className="flex min-h-dvh flex-col bg-canvas px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.5rem,env(safe-area-inset-top))] sm:px-3">
       <div className="mx-auto flex w-full max-w-7xl min-h-0 flex-1 flex-col">
         <div className="w95-window">
           <header className="shrink-0">
@@ -1085,7 +1109,12 @@ export default function App() {
             </div>
           </header>
 
-          <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain bg-zinc-50/80 px-2 py-3 sm:px-4 sm:py-4">
+          <main className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain bg-canvas px-2 py-3 sm:px-4 sm:py-4">
+            {banner && (
+              <div className="mb-4">
+                <StatusBanner banner={banner} onDismiss={() => setBanner(null)} />
+              </div>
+            )}
         {!isStarted ? (
           <div className="space-y-8">
             {/* Tab Switcher */}
@@ -1711,11 +1740,11 @@ export default function App() {
 
             <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
               <div>
-                <h1 className="mb-2 border-b border-zinc-200 pb-1 text-lg font-bold text-zinc-900 sm:text-xl">
+                <h1 className="mb-2 border-b border-white/8 pb-1 text-lg font-bold text-ink sm:text-xl">
                   Tournament live
                 </h1>
                 <div className="flex flex-wrap gap-2">
-                  <div className="w95-inset flex items-center gap-2 px-2 py-1.5 text-xs font-semibold text-zinc-800">
+                  <div className="w95-inset flex items-center gap-2 px-2 py-1.5 text-xs font-semibold text-ink-secondary">
                     <Info className="h-4 w-4 shrink-0" />
                     <span>
                       First to {rules.pointsToWin}
@@ -1767,6 +1796,8 @@ export default function App() {
                 )}
               </div>
             </div>
+
+            <LiveFeed matches={matches} teams={teams} />
 
             {format === 'winners-list' ? (
               <WinnersListView 

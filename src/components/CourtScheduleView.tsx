@@ -88,14 +88,14 @@ export const CourtScheduleView: React.FC<CourtScheduleViewProps> = ({
             <span className="flex items-center gap-2">
               <Users className="h-4 w-4" />
               Waiting for a court
-              <span className="border border-black bg-[#000080] px-2 py-0.5 text-xs font-bold text-white">
+              <span className="rounded border border-accent/30 bg-accent/15 px-2 py-0.5 text-xs font-bold text-accent">
                 {queuedMatches.length}
               </span>
             </span>
           </div>
-          <p className="text-xs font-bold text-black">{queueHelpText}</p>
+          <p className="text-xs font-bold text-ink-secondary">{queueHelpText}</p>
           {casualHint != null && (
-            <p className="text-[10px] font-semibold text-zinc-600">
+            <p className="text-[10px] font-semibold text-ink-muted">
               {casualHint} wave{casualHint === 1 ? '' : 's'} planned — complete each wave before the next queue opens.
               Not a formal standings format.
             </p>
@@ -104,21 +104,21 @@ export const CourtScheduleView: React.FC<CourtScheduleViewProps> = ({
             {queuedMatches.map((match, i) => (
               <div
                 key={match.id}
-                className="flex flex-col gap-2 border-2 border-dashed border-[#808080] bg-white/80 p-3 w95-panel"
+                className="flex flex-col gap-2 rounded-card border border-dashed border-white/15 bg-surface p-3 w95-panel"
               >
-                <div className="flex items-center justify-between text-[10px] font-bold uppercase text-black/70">
+                <div className="flex items-center justify-between text-[10px] font-bold uppercase text-ink-muted">
                   <span>Up next</span>
                   <span>#{i + 1}</span>
                 </div>
                 {match.poolGroup && (
-                  <div className="text-[9px] font-extrabold text-emerald-800">Group {match.poolGroup}</div>
+                  <div className="text-[9px] font-extrabold text-win">Group {match.poolGroup}</div>
                 )}
                 {(scheduleKind === 'casual' || (scheduleKind === 'round-robin' && match.round > 1)) && (
-                  <div className="text-[9px] font-bold text-zinc-500">Round {match.round}</div>
+                  <div className="text-[9px] font-bold text-ink-muted">Round {match.round}</div>
                 )}
-                <div className="flex items-center justify-between gap-2 text-sm font-bold text-black">
+                <div className="flex items-center justify-between gap-2 text-sm font-bold text-ink">
                   <span className="min-w-0 truncate">{getTeam(match.team1Id)?.name ?? '—'}</span>
-                  <span className="shrink-0 text-[10px] text-black/50">vs</span>
+                  <span className="shrink-0 text-[10px] text-ink-muted">vs</span>
                   <span className="min-w-0 truncate text-right">
                     {getTeam(match.team2Id)?.name ?? '—'}
                   </span>
@@ -129,7 +129,7 @@ export const CourtScheduleView: React.FC<CourtScheduleViewProps> = ({
         </div>
       )}
 
-      <div className="h-0 border-t-2 border-[#808080]" />
+      <div className="h-0 border-t border-white/8" />
 
       <div className="space-y-4">
         <div className="w95-list-header flex items-center gap-2">
@@ -141,19 +141,19 @@ export const CourtScheduleView: React.FC<CourtScheduleViewProps> = ({
             const match = activeMatches.find(m => m.netIndex === i);
             return (
               <div key={i} className="flex flex-col overflow-hidden w95-panel p-0">
-                <div className="flex items-center justify-between border-b-2 border-[#808080] bg-zinc-100 px-3 py-2">
-                  <span className="text-xs font-bold uppercase tracking-wide text-black">
+                <div className="flex items-center justify-between border-b border-white/8 bg-surface-raised px-3 py-2">
+                  <span className="text-xs font-bold uppercase tracking-wide text-ink">
                     Net {i + 1}
                   </span>
                   {match ? (
-                    <span className="flex items-center gap-1 text-[10px] font-bold uppercase text-black">
+                    <span className="flex items-center gap-1 text-[10px] font-bold uppercase text-live">
                       <Clock className="h-3 w-3" /> Live
                     </span>
                   ) : (
-                    <span className="text-[10px] font-bold uppercase text-black/50">Open</span>
+                    <span className="text-[10px] font-bold uppercase text-ink-muted">Open</span>
                   )}
                 </div>
-                <div className="flex-1 bg-[#c0c0c0] p-3">
+                <div className="flex-1 bg-surface p-3">
                   {match ? (
                     <MatchCard
                       match={match}
@@ -164,7 +164,7 @@ export const CourtScheduleView: React.FC<CourtScheduleViewProps> = ({
                       showNetBadge={false}
                     />
                   ) : (
-                    <div className="flex h-[120px] flex-col items-center justify-center border-2 border-dashed border-[#808080] text-black/50 w95-inset">
+                    <div className="flex h-[120px] flex-col items-center justify-center rounded-lg border border-dashed border-white/15 text-ink-muted w95-inset">
                       <Layout className="mb-2 h-8 w-8 opacity-40" />
                       <span className="text-xs font-bold">No match yet</span>
                     </div>
@@ -181,13 +181,13 @@ export const CourtScheduleView: React.FC<CourtScheduleViewProps> = ({
           {scheduleKind === 'casual' ? 'Activity (not ranked)' : 'Standings'}
         </div>
         {scheduleKind === 'casual' && (
-          <p className="border-b-2 border-[#808080] bg-zinc-50 px-3 py-2 text-[10px] font-semibold text-zinc-600">
+          <p className="border-b border-white/8 bg-surface px-3 py-2 text-[10px] font-semibold text-ink-muted">
             Rows are alphabetical. Wins and losses are FYI only — this format has no official winner.
           </p>
         )}
-        <table className="min-w-[400px] w-full border-collapse text-left text-black">
+        <table className="min-w-[400px] w-full border-collapse text-left text-ink">
           <thead>
-            <tr className="border-b-2 border-[#808080]">
+            <tr className="border-b border-white/8">
               <th className="w95-inset px-3 py-2 text-[10px] font-bold uppercase">Team</th>
               {scheduleKind === 'casual' && (
                 <th className="w95-inset px-3 py-2 text-center text-[10px] font-bold uppercase">GP</th>
@@ -202,29 +202,29 @@ export const CourtScheduleView: React.FC<CourtScheduleViewProps> = ({
               <tr
                 key={team.id}
                 className={cn(
-                  'border-t border-zinc-200',
-                  scheduleKind === 'round-robin' && isFinished && highlightTeamId === team.id && 'bg-emerald-50'
+                  'border-t border-white/8',
+                  scheduleKind === 'round-robin' && isFinished && highlightTeamId === team.id && 'bg-win/10'
                 )}
               >
                 <td
                   className={cn(
                     'px-3 py-2 text-sm font-bold',
                     scheduleKind === 'round-robin' && isFinished && highlightTeamId === team.id
-                      ? 'bg-emerald-50 text-emerald-950'
-                      : 'bg-white'
+                      ? 'bg-win/10 text-win'
+                      : 'bg-surface-raised'
                   )}
                 >
                   {team.name}
                   {scheduleKind === 'round-robin' && isFinished && highlightTeamId === team.id && (
-                    <span className="ml-2 text-xs font-semibold text-emerald-800">Leader</span>
+                    <span className="ml-2 text-xs font-semibold text-win">Leader</span>
                   )}
                 </td>
                 {scheduleKind === 'casual' && (
-                  <td className="bg-white px-3 py-2 text-center text-sm">{team.gp}</td>
+                  <td className="bg-surface-raised px-3 py-2 text-center text-sm">{team.gp}</td>
                 )}
-                <td className="bg-white px-3 py-2 text-center text-sm">{team.wins}</td>
-                <td className="bg-white px-3 py-2 text-center text-sm">{team.losses}</td>
-                <td className="bg-white px-3 py-2 text-center font-mono text-sm font-bold">
+                <td className="bg-surface-raised px-3 py-2 text-center text-sm">{team.wins}</td>
+                <td className="bg-surface-raised px-3 py-2 text-center text-sm">{team.losses}</td>
+                <td className="bg-surface-raised px-3 py-2 text-center font-mono text-sm font-bold">
                   {team.diff > 0 ? `+${team.diff}` : team.diff}
                 </td>
               </tr>
@@ -246,28 +246,28 @@ export const CourtScheduleView: React.FC<CourtScheduleViewProps> = ({
                   <span
                     className={cn(
                       'truncate text-xs font-bold',
-                      m.winnerId === m.team1Id ? 'text-black underline' : 'text-black/50'
+                      m.winnerId === m.team1Id ? 'text-ink underline' : 'text-ink-muted'
                     )}
                   >
                     {getTeam(m.team1Id)?.name}
                   </span>
-                  <span className="text-[10px] text-black/40">vs</span>
+                  <span className="text-[10px] text-ink-muted">vs</span>
                   <span
                     className={cn(
                       'truncate text-xs font-bold',
-                      m.winnerId === m.team2Id ? 'text-black underline' : 'text-black/50'
+                      m.winnerId === m.team2Id ? 'text-ink underline' : 'text-ink-muted'
                     )}
                   >
                     {getTeam(m.team2Id)?.name}
                   </span>
                 </div>
-                <div className="text-[10px] font-bold uppercase text-black/70">
+                <div className="text-[10px] font-bold uppercase text-ink-muted">
                   {m.sets && m.sets.length > 0
                     ? m.sets.map(s => `${s.team1}-${s.team2}`).join(', ')
                     : `${m.score1 ?? 0}-${m.score2 ?? 0} sets`}
                 </div>
                 {m.winnerId && (
-                  <div className="mt-1 text-[10px] font-extrabold uppercase text-emerald-800">
+                  <div className="mt-1 text-[10px] font-extrabold uppercase text-win">
                     Winner: {getTeam(m.winnerId)?.name ?? m.winnerId}
                   </div>
                 )}
@@ -276,7 +276,7 @@ export const CourtScheduleView: React.FC<CourtScheduleViewProps> = ({
             </div>
           ))}
           {completedMatches.length === 0 && (
-            <div className="col-span-full border-2 border-dashed border-[#808080] p-8 text-center text-xs font-bold text-black/60 w95-inset">
+            <div className="col-span-full rounded-lg border border-dashed border-white/15 p-8 text-center text-xs font-bold text-ink-muted w95-inset">
               No finished matches yet
             </div>
           )}
