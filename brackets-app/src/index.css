@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #000000;
+  --color-surface: #1c1c1e;
+  --color-surface-raised: #2c2c2e;
+  --color-surface-overlay: #3a3a3c;
+  --color-ink: #ffffff;
+  --color-ink-secondary: rgba(255, 255, 255, 0.62);
+  --color-ink-muted: rgba(255, 255, 255, 0.38);
+  --color-live: #ff453a;
+  --color-win: #30d158;
+  --color-tie: #ffd60a;
+  --color-accent: #0a84ff;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+  --font-score: "SF Pro Display", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+
+  --radius-card: 1.125rem;
+
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 8px 32px rgba(0, 0, 0, 0.45);
+  --shadow-feed: 0 12px 40px rgba(0, 0, 0, 0.55);
+
+  --animate-live-pulse: live-pulse 1.6s ease-in-out infinite;
+  --animate-fade-up: fade-up 0.35s ease-out both;
+
+  @keyframes live-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.45;
+      transform: scale(0.88);
+    }
+  }
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #000;
+  color: #fff;
+  font-family: var(--font-sans);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(10, 132, 255, 0.35);
+}
+
+input,
+textarea,
+select,
+button {
+  font: inherit;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.glass-panel {
+  background: rgba(28, 28, 30, 0.82);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
+.score-input {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.score-input:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.score-input:focus {
+  outline: none;
+  border-color: rgba(10, 132, 255, 0.55);
+  background: rgba(10, 132, 255, 0.08);
+}
