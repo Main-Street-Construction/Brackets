@@ -48,6 +48,8 @@ import { LiveFeed } from './components/LiveFeed';
 import { StatusBanner, type BannerMessage } from './components/StatusBanner';
 import { validateBracketSeed } from './lib/validateBracket';
 import { formatFirebaseError } from './lib/firebaseErrors';
+import { matchToFirestore } from './lib/matchFirestore';
+import { matchesNeedNetReconcile, reconcileMatchNets } from './lib/reconcileNets';
 
 const DEFAULT_RULES: TournamentRules = {
   pointsToWin: 25,
@@ -259,10 +261,30 @@ export default function App() {
     const unsubMatches = onSnapshot(
       collection(db, 'tournaments', tournamentId, 'matches'),
       snapshot => {
-        const matchesData = snapshot.docs.map(d => {
+        let matchesData = snapshot.docs.map(d => {
           const data = d.data() as Match;
           return { ...data, id: data.id ?? d.id };
         });
+        if (
+          isCreator &&
+          isStarted &&
+          !isFinished &&
+          format !== 'winners-list' &&
+          matchesNeedNetReconcile(matchesData)
+        ) {
+          matchesData = reconcileMatchNets(matchesData, numNets, format);
+          void Promise.all(
+            matchesData.map(m =>
+              setDoc(
+                doc(db, 'tournaments', tournamentId, 'matches', m.id),
+                matchToFirestore(m)
+              )
+            )
+          ).catch(err => {
+            console.error('[Firestore] net reconcile failed:', err);
+            setBanner({ type: 'error', message: formatFirebaseError(err) });
+          });
+        }
         setMatches(matchesData);
       },
       err => {
@@ -276,7 +298,7 @@ export default function App() {
       unsubTeams();
       unsubMatches();
     };
-  }, [tournamentId, user]);
+  }, [tournamentId, user, isCreator, isStarted, isFinished, format, numNets]);
 
   const createTournament = async () => {
     if (!user || !db) {
@@ -487,18 +509,24 @@ export default function App() {
           }
         }
 
+        for (const match of initialMatches) {
+          await setDoc(
+            doc(db, 'tournaments', tournamentId, 'matches', match.id),
+            matchToFirestore(match)
+          );
+        }
+
         await updateDoc(doc(db, 'tournaments', tournamentId), { 
           isStarted: true, 
           isFinished: false,
           queue: initialQueue,
           activeNets: initialActiveNets
         });
-        for (const match of initialMatches) {
-          await setDoc(
-            doc(db, 'tournaments', tournamentId, 'matches', match.id),
-            stripUndefined(match)
-          );
-        }
+        setMatches(initialMatches);
+        setQueue(initialQueue);
+        setActiveNets(initialActiveNets);
+        setIsStarted(true);
+        setIsFinished(false);
       } else {
         setMatches(initialMatches);
         setQueue(initialQueue);
@@ -513,13 +541,16 @@ export default function App() {
     validateBracketSeed(initialMatches, teams, format);
 
     if (tournamentId && db) {
-      await updateDoc(doc(db, 'tournaments', tournamentId), { isStarted: true, isFinished: false });
       for (const match of initialMatches) {
         await setDoc(
           doc(db, 'tournaments', tournamentId, 'matches', match.id),
-          stripUndefined(match)
+          matchToFirestore(match)
         );
       }
+      await updateDoc(doc(db, 'tournaments', tournamentId), { isStarted: true, isFinished: false });
+      setMatches(initialMatches);
+      setIsStarted(true);
+      setIsFinished(false);
     } else {
       setMatches(initialMatches);
       setIsStarted(true);
@@ -681,7 +712,7 @@ export default function App() {
         }
         updateDoc(doc(db, 'tournaments', tournamentId), updates);
         for (const match of matchesToAdd) {
-          setDoc(doc(db, 'tournaments', tournamentId, 'matches', match.id), stripUndefined(match));
+          setDoc(doc(db, 'tournaments', tournamentId, 'matches', match.id), matchToFirestore(match));
         }
         for (const team of updatedTeams) {
           if (matchesToAdd.some(m => m.team1Id === team.id || m.team2Id === team.id)) {
@@ -815,8 +846,8 @@ export default function App() {
         };
         
         if (tournamentId && db) {
-          await setDoc(doc(db, 'tournaments', tournamentId, 'matches', matchId), stripUndefined(currentMatch));
-          await setDoc(doc(db, 'tournaments', tournamentId, 'matches', nextMatchId), stripUndefined(nextMatch));
+          await setDoc(doc(db, 'tournaments', tournamentId, 'matches', matchId), matchToFirestore(currentMatch));
+          await setDoc(doc(db, 'tournaments', tournamentId, 'matches', nextMatchId), matchToFirestore(nextMatch));
           // Reset wins if team is new or both off
           const t1Wins = nextTeam1Id === winnerId && !reachedMax ? updatedWinnerWins : 0;
           await updateDoc(doc(db, 'tournaments', tournamentId, 'teams', nextTeam1Id), { consecutiveWins: t1Wins });
@@ -843,7 +874,7 @@ export default function App() {
       } else {
         // Net becomes empty
         if (tournamentId && db) {
-          await setDoc(doc(db, 'tournaments', tournamentId, 'matches', matchId), stripUndefined(currentMatch));
+          await setDoc(doc(db, 'tournaments', tournamentId, 'matches', matchId), matchToFirestore(currentMatch));
           await updateDoc(doc(db, 'tournaments', tournamentId, 'teams', winnerId), { consecutiveWins: reachedMax ? 0 : updatedWinnerWins });
           await updateDoc(doc(db, 'tournaments', tournamentId, 'teams', loserId), { consecutiveWins: 0 });
           await updateDoc(doc(db, 'tournaments', tournamentId), { 
@@ -897,13 +928,13 @@ export default function App() {
 
     if (tournamentId && db) {
       try {
-        await setDoc(doc(db, 'tournaments', tournamentId, 'matches', matchId), stripUndefined(currentMatch));
+        await setDoc(doc(db, 'tournaments', tournamentId, 'matches', matchId), matchToFirestore(currentMatch));
 
         for (const m of matchesWithNets) {
           const originalMatch = matches.find(om => om.id === m.id);
           if (JSON.stringify(m) !== JSON.stringify(originalMatch)) {
             if (m.id !== matchId) {
-              await setDoc(doc(db, 'tournaments', tournamentId, 'matches', m.id), stripUndefined(m));
+              await setDoc(doc(db, 'tournaments', tournamentId, 'matches', m.id), matchToFirestore(m));
             }
           }
         }

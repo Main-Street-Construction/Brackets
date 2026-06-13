@@ -70,6 +70,12 @@ service cloud.firestore {
         && (!('group' in request.resource.data) || request.resource.data.group is string);
     }
 
+    function nullableString(field) {
+      return !(field in request.resource.data)
+        || request.resource.data[field] == null
+        || request.resource.data[field] is string;
+    }
+
     function validMatchDoc(matchId) {
       return request.resource.data.keys().hasOnly([
           'id',
@@ -78,8 +84,11 @@ service cloud.firestore {
           'score1',
           'score2',
           'winnerId',
+          'byeWalkover',
           'nextMatchId',
+          'nextMatchSlot',
           'loserMatchId',
+          'loserMatchSlot',
           'round',
           'bracketType',
           'netIndex',
@@ -88,16 +97,20 @@ service cloud.firestore {
         ])
         && request.resource.data.id == matchId
         && request.resource.data.round is int
-        && (!('team1Id' in request.resource.data) || request.resource.data.team1Id is string)
-        && (!('team2Id' in request.resource.data) || request.resource.data.team2Id is string)
-        && (!('winnerId' in request.resource.data) || request.resource.data.winnerId is string)
+        && nullableString('team1Id')
+        && nullableString('team2Id')
+        && nullableString('winnerId')
+        && nullableString('nextMatchId')
+        && nullableString('loserMatchId')
         && (!('score1' in request.resource.data) || request.resource.data.score1 is int)
         && (!('score2' in request.resource.data) || request.resource.data.score2 is int)
-        && (!('nextMatchId' in request.resource.data) || request.resource.data.nextMatchId is string)
-        && (!('loserMatchId' in request.resource.data) || request.resource.data.loserMatchId is string)
+        && (!('byeWalkover' in request.resource.data) || request.resource.data.byeWalkover is bool)
+        && (!('nextMatchSlot' in request.resource.data) || request.resource.data.nextMatchSlot is int)
+        && (!('loserMatchSlot' in request.resource.data) || request.resource.data.loserMatchSlot is int)
         && (!('bracketType' in request.resource.data) || request.resource.data.bracketType is string)
         && (!('netIndex' in request.resource.data) || request.resource.data.netIndex is int)
-        && (!('poolGroup' in request.resource.data) || request.resource.data.poolGroup is string);
+        && (!('poolGroup' in request.resource.data) || request.resource.data.poolGroup is string)
+        && (!('sets' in request.resource.data) || request.resource.data.sets is list);
     }
 
     match /tournaments/{tournamentId} {

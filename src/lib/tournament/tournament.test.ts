@@ -496,6 +496,36 @@ describe('generateGroupStagePool', () => {
   });
 });
 
+describe('reconcileMatchNets', () => {
+  it('assigns nets when playable matches have no court', async () => {
+    const { reconcileMatchNets, matchesNeedNetReconcile } = await import('../reconcileNets');
+    const teams = teams4(4);
+    let m = generateSingleElimination(teams);
+    m = autoAdvanceByes(m);
+    expect(matchesNeedNetReconcile(m)).toBe(true);
+    const fixed = reconcileMatchNets(m, 2, 'single');
+    expect(fixed.some(x => matchIsOnNet(x) && !x.winnerId)).toBe(true);
+  });
+});
+
+describe('matchToFirestore', () => {
+  it('includes bracket metadata required for cloud sync', async () => {
+    const { matchToFirestore } = await import('../matchFirestore');
+    const doc = matchToFirestore({
+      id: 'w1-0',
+      team1Id: 't1',
+      team2Id: 't2',
+      round: 1,
+      nextMatchSlot: 1,
+      nextMatchId: 'w2-0',
+      netIndex: 0
+    });
+    expect(doc.nextMatchSlot).toBe(1);
+    expect(doc.netIndex).toBe(0);
+    expect(doc.team1Id).toBe('t1');
+  });
+});
+
 describe('assignNets double elimination', () => {
   it('does not assign winners bracket round 2 until all WB round 1 have winners', () => {
     const matches: Match[] = [
